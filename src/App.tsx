@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { Cpu, CpuIcon, HardDrive, MemoryStick, MonitorSmartphone } from "lucide-react";
+import { Cpu, CpuIcon, HardDrive, MemoryStick, MonitorSmartphone, Settings } from "lucide-react";
 import { invoke } from "@/types";
 import type { HardwareReport, KextEntry, MacosVersion, SmbiosData, SmbiosRecommendation } from "@/types";
 import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { SettingsDialog } from "@/components/SettingsDialog";
 import { WelcomeStep } from "@/components/steps/WelcomeStep";
 import { HardwareStep } from "@/components/steps/HardwareStep";
 import { KextsStep } from "@/components/steps/KextsStep";
@@ -107,7 +108,12 @@ export default function App() {
               {i < STEPS.length - 1 && <Separator orientation="vertical" className="mx-0.5 h-3.5" />}
             </div>
           ))}
-          <Button variant="ghost" size="icon" onClick={toggle} className="ml-2" title="Тема">
+          <SettingsDialog>
+            <Button variant="ghost" size="icon" title="Настройки">
+              <Settings className="size-4" />
+            </Button>
+          </SettingsDialog>
+          <Button variant="ghost" size="icon" onClick={toggle} title="Тема">
             {dark ? "☀️" : "🌙"}
           </Button>
         </div>
