@@ -258,7 +258,7 @@ mod tests {
         write_minimal_kext(&tool_out.join("UTBMap.kext"));
 
         // EFI-папка с конфигом, где уже есть UTBDefault
-        let efi = tmp.join("volume/EFI");
+        let efi = tmp.join("volume").join("EFI");
         let oc = efi.join("OC");
         std::fs::create_dir_all(&oc).unwrap();
         std::fs::write(oc.join("config.plist"), config_with_utbdefault()).unwrap();
@@ -289,9 +289,9 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("openefi-utbmap2-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
 
-        let kext = tmp.join("src/UTBMap.kext");
+        let kext = tmp.join("src").join("UTBMap.kext");
         write_minimal_kext(&kext);
-        let efi = tmp.join("volume/EFI");
+        let efi = tmp.join("volume").join("EFI");
         std::fs::create_dir_all(&efi).unwrap();
 
         let report = install_utbmap(&kext, &tmp.join("volume")).unwrap();
