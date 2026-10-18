@@ -1,14 +1,14 @@
 //! Подбор SSDT по железу — матрица из гайда Dortania
 //! https://dortania.github.io/Getting-Started-With-ACPI/
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::hardware::HardwareReport;
 
 const COMPILED_URL: &str = "https://github.com/dortania/Getting-Started-With-ACPI/tree/master/extra-files/compiled";
 const GUIDE_URL: &str = "https://dortania.github.io/Getting-Started-With-ACPI/";
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SsdtEntry {
     /// Имя без расширения, напр. "SSDT-PLUG-DRTNIA"
     pub name: String,

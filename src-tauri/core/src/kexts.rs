@@ -1,10 +1,10 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::cpu_codename;
 use crate::db::device_ids;
 use crate::hardware::{HardwareReport, in_list};
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct KextEntry {
     pub name: String,
     pub description: String,
