@@ -42,6 +42,7 @@ jobs:
           - os: macos-latest
             target: universal-apple-darwin
             args: "--target universal-apple-darwin"
+            targets: "aarch64-apple-darwin,x86_64-apple-darwin"
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             args: ""
@@ -56,7 +57,7 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.targets || matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2

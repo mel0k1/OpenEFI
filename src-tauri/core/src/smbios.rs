@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::{mac_models, MacModelRaw};
 use crate::macos::parse_darwin;
 
-#[derive(Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct MacDevice {
     pub name: String,
     pub cpu: String,
@@ -22,7 +22,7 @@ pub fn mac_devices() -> &'static Vec<MacDevice> {
     })
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SmbiosRecommendation {
     pub recommended: String,
     pub reason: String,
@@ -233,7 +233,7 @@ pub fn recommend(report: &crate::hardware::HardwareReport, darwin: u32) -> Smbio
     SmbiosRecommendation { recommended: model, reason }
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SmbiosData {
     pub model: String,
     pub serial: String,

@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
 use sysinfo::System;
@@ -6,7 +6,7 @@ use sysinfo::System;
 use crate::cpu_codename;
 use crate::db::PciDatabase;
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CpuInfo {
     pub manufacturer: String,
     pub name: String,
@@ -16,7 +16,7 @@ pub struct CpuInfo {
     pub avx2: bool,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct DeviceInfo {
     pub name: String,
     pub vendor_id: String,
@@ -25,7 +25,7 @@ pub struct DeviceInfo {
     pub note: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct GpuInfo {
     pub name: String,
     pub vendor_id: String,
@@ -36,7 +36,7 @@ pub struct GpuInfo {
     pub note: Option<String>,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HardwareReport {
     pub os: String,
     pub platform: String,
