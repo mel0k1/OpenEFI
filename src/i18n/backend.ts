@@ -308,6 +308,39 @@ export const BACKEND_EN: Record<string, string> = {
     "could not assign a drive letter to the EFI partition — run OpenEFI as administrator",
   "udisksctl не найден — смонтируйте EFI-раздел вручную (например, sudo mount)":
     "udisksctl not found — mount the EFI partition manually (e.g. sudo mount)",
+
+  // --- Ошибки и диалоги, не покрытые точными ключами или паттернами ---
+  "Kernel → Add в config.plist — не массив": "Kernel → Add in config.plist is not an array",
+  "Misc → Tools в config.plist — не массив": "Misc → Tools in config.plist is not array",
+  "Plist конфиг OpenCore": "OpenCore plist config",
+  "Sample.plist — не словарь": "Sample.plist is not a dictionary",
+  "Выберите EFI-папку или диск с EFI": "Select the EFI folder or the disk containing EFI",
+  "Выберите EFI-папку или диск с EFI для бэкапа":
+    "Select the EFI folder or disk to back up",
+  "Выберите EFI-папку или диск с EFI для обновления кекстов":
+    "Select the EFI folder or disk to update kexts",
+  "Выберите EFI-папку или диск с EFI для проверки": "Select the EFI folder or disk to check",
+  "Выберите EFI-папку или диск с EFI для проверки config.plist":
+    "Select the EFI folder or disk to check config.plist",
+  "Выберите EFI-папку или диск с EFI для проверки обновлений кекстов":
+    "Select the EFI folder or disk to check kext updates",
+  "Выберите EFI-папку или диск, куда собрать полную EFI":
+    "Select the EFI folder or disk to assemble the full EFI into",
+  "Выберите папку UTBMap.kext или папку вывода USBToolBox":
+    "Select the UTBMap.kext folder or the USBToolBox output folder",
+  "Рекомендуется AppleALC; при проблемах задать alcid в boot-args":
+    "AppleALC recommended; if there are problems, set alcid in boot-args",
+  "архив подозрительно большой (zip-bomb?)": "archive is suspiciously large (zip-bomb?)",
+  "в выбранной папке не найден UTBMap.kext — выберите сам бандл или папку с ним":
+    "UTBMap.kext not found in the selected folder — pick the bundle itself or its folder",
+  "некорректный идентификатор диска": "invalid disk identifier",
+  "некорректный идентификатор раздела": "invalid partition identifier",
+  "некорректный идентификатор раздела (ожидается «disk N partition N»)":
+    "invalid partition identifier (expected “disk N partition N”)",
+  "некорректный репозиторий": "invalid repository",
+  "не создать Kernel → Add": "cannot create Kernel → Add",
+  "не создать Misc → Tools": "cannot create Misc → Tools",
+  "не создать UEFI → Audio": "cannot create UEFI → Audio",
 };
 
 // Динамические строки бэкенда: подстановки вида "AMD {codename}: серверная SMBIOS"
@@ -353,4 +386,29 @@ export const BACKEND_PATTERNS: [RegExp, string][] = [
     "AudioSupport was not enabled — picker sound will work after a manual UEFI → Audio edit: $1"],
   [/^не смонтировать (.+): (.+)$/, "cannot mount $1: $2 — try mounting it manually"],
   [/^не смонтировать (.+)$/, "cannot mount $1"],
+
+  // --- Патчи аудита от 2026-10: строки, остававшиеся непереведёнными ---
+  [/^GitHub API вернул (\d+) для (.+)$/, "GitHub API returned $1 for $2"],
+  [/^Не удалось получить список PCI-устройств: (.+)$/, "failed to list PCI devices: $1"],
+  [/^(.+) уже существует — подождите секунду и повторите$/,
+    "$1 already exists — wait a second and try again"],
+  [/^в config\.plist нет секции (.+)$/, "no $1 section in config.plist"],
+  [/^в релизе (.+) не найден подходящий архив — скачайте вручную$/,
+    "no matching archive in the $1 release — download it manually"],
+  [/^в релизе (.+) нет ассета с расширением (.+)$/, "no $2 asset in the $1 release"],
+  [/^в релизе (.+) нет ассета (.+)$/, "no $2 asset in the $1 release"],
+  [/^в репозитории (.+) нет релизов$/, "the $1 repository has no releases"],
+  [/^не заменить (.+): (.+)$/, "cannot replace $1: $2"],
+  [/^не запустить (.+): (.+)$/, "cannot run $1: $2"],
+  [/^не скопировать (.+): (.+)$/, "cannot copy $1: $2"],
+  [/^не читать (.+): (.+)$/, "cannot read $1: $2"],
+  [/^не удалось разобрать (.+): (.+)$/, "cannot parse $1: $2"],
+  [/^не удалось сериализовать (.+): (.+)$/, "cannot serialize $1: $2"],
+  [/^автомонтирование не поддерживается на (.+)$/, "auto-mounting is not supported on $1"],
+  [/^неизвестная цель утилиты: (.+)$/, "unknown tool target: $1"],
+  [/^неожиданный ответ GitHub API: (.+)$/, "unexpected GitHub API response: $1"],
+  [/^нет связи с GitHub \((.+)\)$/, "no connection to GitHub ($1)"],
+  [/^ответ GitHub не читается: (.+)$/, "the GitHub response is unreadable: $1"],
+  // без двоеточия — в самом конце, чтобы не перехватывать «не создать X: Y»
+  [/^не создать (.+)$/, "cannot create $1"],
 ];

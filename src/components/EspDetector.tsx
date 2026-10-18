@@ -14,7 +14,7 @@ interface Props {
 
 /** Автопоиск EFI-раздела (ESP по GPT-типу) вместо ручного выбора папки */
 export function EspDetector({ base, onBase }: Props) {
-  const { t } = useI18n();
+  const { t, tb } = useI18n();
   const [searching, setSearching] = useState(false);
   const [parts, setParts] = useState<EfiPartition[] | null>(null);
   const [mounting, setMounting] = useState<string | null>(null);
@@ -100,7 +100,7 @@ export function EspDetector({ base, onBase }: Props) {
             <span className="font-mono">{p.device}</span>
             <span className="text-muted-foreground">
               {p.mounted_at}
-              {p.size_mb != null && ` · ${p.size_mb} МБ`}
+              {p.size_mb != null && ` · ${p.size_mb} ${t("app.mb")}`}
             </span>
           </button>
         ))}
@@ -132,7 +132,7 @@ export function EspDetector({ base, onBase }: Props) {
           <div className="text-muted-foreground text-xs">{t("esp.notFound")}</div>
         )}
 
-        {error && <div className="text-destructive text-xs leading-relaxed">{error}</div>}
+        {error && <div className="text-destructive text-xs leading-relaxed">{tb(error)}</div>}
       </CardContent>
     </Card>
   );

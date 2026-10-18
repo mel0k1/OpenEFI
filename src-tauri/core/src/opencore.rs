@@ -955,10 +955,9 @@ pub fn build_full_efi(
         let data_install = install_ocbinarydata(&mut data_archive, &efi_base, options.audio_dxe);
         let _ = std::fs::remove_file(&data_zip);
         let (data_files, res) = data_install?;
-        let audio_files_copied = files_installed
-            .iter()
-            .chain(data_files.iter())
-            .any(|f| f.contains("Resources/Audio"));
+        // install_ocbinarydata кладёт в res имена подпапок Resources (Font/Label/Image/Audio):
+        // «Audio» появляется там, только если аудиофайлы реально записаны на диск.
+        let audio_files_copied = res.iter().any(|r| r.eq_ignore_ascii_case("Audio"));
         files_installed.extend(data_files);
         resources_installed = res;
         audio_installed = audio_dxe_installed && audio_files_copied;

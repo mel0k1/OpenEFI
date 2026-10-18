@@ -21,7 +21,7 @@ interface Props {
 
 /** Аудит существующего config.plist: сверка Kernel/Add и ACPI/Add с файлами на диске */
 export function ConfigAuditCard({ base }: Props) {
-  const { t } = useI18n();
+  const { t, tb } = useI18n();
   const [audit, setAudit] = useState<ConfigAudit | null>(null);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -171,7 +171,7 @@ export function ConfigAuditCard({ base }: Props) {
           </div>
         )}
 
-        {error && <div className="text-destructive text-xs leading-relaxed">{error}</div>}
+        {error && <div className="text-destructive text-xs leading-relaxed">{tb(error)}</div>}
       </CardContent>
     </Card>
   );

@@ -33,7 +33,7 @@ pub fn macos_name_by_darwin(darwin: u32) -> &'static str {
     MACOS_VERSIONS
         .iter()
         .find(|(_, _, d)| *d == darwin)
-        .map(|(n, name, _)| if n.contains('.') { concat!("macOS ", "") } else { name })
+        .map(|(_, name, _)| *name)
         .unwrap_or("macOS")
 }
 

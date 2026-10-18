@@ -14,7 +14,7 @@ interface Props {
 }
 
 export function UsbMappingCard({ base }: Props) {
-  const { t } = useI18n();
+  const { t, tb } = useI18n();
   const [toolBusy, setToolBusy] = useState<ToolTarget | null>(null);
   const [toolPath, setToolPath] = useState<string | null>(null);
   const [toolError, setToolError] = useState<string | null>(null);
@@ -140,7 +140,7 @@ export function UsbMappingCard({ base }: Props) {
         {error && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-destructive">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <div className="text-xs leading-relaxed">{error}</div>
+            <div className="text-xs leading-relaxed">{tb(error)}</div>
           </div>
         )}
       </CardContent>

@@ -215,7 +215,7 @@ export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin,
           {error && (
             <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-destructive">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-              <div className="text-xs leading-relaxed">{error}</div>
+              <div className="text-xs leading-relaxed">{tb(error)}</div>
             </div>
           )}
 

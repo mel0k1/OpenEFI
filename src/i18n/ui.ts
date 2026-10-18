@@ -15,6 +15,7 @@ export const ru: Record<string, string> = {
   "app.next": "Далее",
   "app.done": "Готово",
   "app.gb": "ГБ",
+  "app.mb": "МБ",
 
   "welcome.title": "Добро пожаловать в OpenEFI",
   "welcome.desc":
@@ -397,6 +398,7 @@ export const en: Record<string, string> = {
   "app.next": "Next",
   "app.done": "Done",
   "app.gb": "GB",
+  "app.mb": "MB",
 
   "welcome.title": "Welcome to OpenEFI",
   "welcome.desc":
