@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -58,7 +57,7 @@ async function getAppVersion(): Promise<string> {
     return await getVersion();
   } catch {
     // dev-режим в браузере без Tauri-рантайма
-    return "0.1.0";
+    return "0.3.0";
   }
 }
 
@@ -229,8 +228,6 @@ export function SettingsDialog({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-          <Separator />
-
           {/* Ссылки */}
           <div>
             <div className="text-sm font-medium">Ссылки</div>
@@ -254,11 +251,6 @@ export function SettingsDialog({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          <Separator />
-
-          <div className="text-muted-foreground text-center text-[11px]">
-            OpenEFI · GPL-3.0 · сделано с 💙 для хакинтоша
-          </div>
         </div>
       </DialogContent>
     </Dialog>

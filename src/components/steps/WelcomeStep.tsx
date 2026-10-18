@@ -1,4 +1,5 @@
 import { Cpu, HardDriveDownload, Loader2, Sparkles } from "lucide-react";
+import appIcon from "@/assets/openefi-icon.png";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -10,9 +11,7 @@ interface Props {
 export function WelcomeStep({ scanning, onScan }: Props) {
   return (
     <div className="flex flex-col items-center py-10">
-      <div className="mb-6 flex size-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-        <Cpu className="size-10" />
-      </div>
+      <img src={appIcon} alt="OpenEFI" className="mb-6 size-20" />
       <h1 className="mb-2 text-2xl font-bold">Добро пожаловать в OpenEFI</h1>
       <p className="text-muted-foreground mb-8 max-w-lg text-center text-sm leading-relaxed">
         Определите железо компьютера, получите подборку совместимых кекстов,

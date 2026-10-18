@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Cpu, CpuIcon, HardDrive, MemoryStick, MonitorSmartphone, Settings } from "lucide-react";
+import { CpuIcon, HardDrive, MemoryStick, MonitorSmartphone, Settings } from "lucide-react";
+import appIcon from "@/assets/openefi-icon.png";
 import { invoke } from "@/types";
 import type { HardwareReport, KextEntry, MacosVersion, SmbiosData, SmbiosRecommendation, SsdtEntry } from "@/types";
 import { useTheme } from "@/hooks/useTheme";
@@ -89,15 +90,8 @@ export default function App() {
     <div className="flex h-screen flex-col bg-background text-foreground">
       <header className="flex items-center justify-between border-b px-5 py-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Cpu className="size-4.5" />
-          </div>
-          <div>
-            <div className="text-sm font-semibold leading-tight">OpenEFI</div>
-            <div className="text-muted-foreground text-[11px] leading-tight">
-              сборка EFI для хакинтоша
-            </div>
-          </div>
+          <img src={appIcon} alt="OpenEFI" className="size-8" />
+          <div className="text-sm font-semibold leading-tight">OpenEFI</div>
         </div>
         <div className="flex items-center gap-1">
           {STEPS.map((label, i) => (
