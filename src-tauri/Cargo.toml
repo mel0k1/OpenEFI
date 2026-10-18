@@ -1,6 +1,6 @@
 [package]
 name = "openefi"
-version = "0.7.0"
+version = "0.8.0"
 description = "Hackintosh EFI builder"
 authors = ["mel0k1"]
 edition = "2024"
