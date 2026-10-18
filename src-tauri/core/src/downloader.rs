@@ -59,16 +59,15 @@ pub struct DownloadProgress {
 }
 
 #[derive(Deserialize, Debug)]
-struct Release {
-    #[allow(dead_code)]
-    tag_name: Option<String>,
-    assets: Vec<Asset>,
+pub struct Release {
+    pub tag_name: Option<String>,
+    pub assets: Vec<Asset>,
 }
 
 #[derive(Deserialize, Debug)]
-struct Asset {
-    name: String,
-    browser_download_url: String,
+pub struct Asset {
+    pub name: String,
+    pub browser_download_url: String,
 }
 
 /// Имена macOS для подбора вариантных ассетов (AirportItlwm и т.п.)
@@ -198,7 +197,7 @@ pub fn resolve_efi_base(selected: &Path) -> PathBuf {
     selected.to_path_buf()
 }
 
-fn http_agent() -> ureq::Agent {
+pub fn http_agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
         .user_agent(USER_AGENT)
         .timeout_connect(std::time::Duration::from_secs(15))
@@ -206,7 +205,17 @@ fn http_agent() -> ureq::Agent {
         .build()
 }
 
-fn fetch_latest_release(agent: &ureq::Agent, repo: &str) -> Result<Release, String> {
+/// Агент без следования редиректам: нужен, чтобы прочитать Location вручную
+pub fn http_agent_no_redirects() -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .user_agent(USER_AGENT)
+        .timeout_connect(std::time::Duration::from_secs(15))
+        .timeout_read(std::time::Duration::from_secs(120))
+        .redirects(0)
+        .build()
+}
+
+pub fn fetch_latest_release(agent: &ureq::Agent, repo: &str) -> Result<Release, String> {
     let url = format!("https://api.github.com/repos/{repo}/releases/latest");
     fetch_release_url(agent, &url, repo)
 }
@@ -234,6 +243,16 @@ fn fetch_release_url(agent: &ureq::Agent, url: &str, repo: &str) -> Result<Relea
 
 /// Скачивание файла потоком на диск (для крупных ассетов и утилит)
 pub fn download_to_file(agent: &ureq::Agent, url: &str, dest: &Path) -> Result<u64, String> {
+    download_to_file_limited(agent, url, dest, MAX_DOWNLOAD_BYTES)
+}
+
+/// То же с собственным лимитом размера (OcBinaryData заметно крупнее кекстов)
+pub fn download_to_file_limited(
+    agent: &ureq::Agent,
+    url: &str,
+    dest: &Path,
+    max_bytes: u64,
+) -> Result<u64, String> {
     let resp = agent
         .get(url)
         .call()
@@ -241,7 +260,7 @@ pub fn download_to_file(agent: &ureq::Agent, url: &str, dest: &Path) -> Result<u
             ureq::Error::Status(code, _) => format!("скачивание прервано: HTTP {code}"),
             _ => "нет связи с сервером при скачивании".into(),
         })?;
-    let mut reader = resp.into_reader().take(MAX_DOWNLOAD_BYTES + 1);
+    let mut reader = resp.into_reader().take(max_bytes + 1);
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("не создать папку {}: {e}", parent.display()))?;
     }
@@ -257,7 +276,7 @@ pub fn download_to_file(agent: &ureq::Agent, url: &str, dest: &Path) -> Result<u
             break;
         }
         written += n as u64;
-        if written > MAX_DOWNLOAD_BYTES {
+        if written > max_bytes {
             drop(out);
             let _ = std::fs::remove_file(dest);
             return Err("файл слишком большой".into());
@@ -617,7 +636,7 @@ pub struct SsdtsToEfiReport {
 /// Перед любыми записями в EFI: предупреждения аудита + полный бэкап EFI/OC,
 /// если OpenCore уже установлен. Никогда не завершаемся ошибкой из-за бэкапа —
 /// только добавляем предупреждение в отчёт.
-fn efi_safety(efi_base: &Path) -> (Option<String>, Vec<String>) {
+pub fn efi_safety(efi_base: &Path) -> (Option<String>, Vec<String>) {
     let mut warnings = crate::efiprotect::audit_warnings(efi_base);
     let mut backup_path = None;
     if efi_base.join("OC").is_dir() {

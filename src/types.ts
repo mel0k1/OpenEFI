@@ -198,3 +198,32 @@ export interface EfiBackupReport {
   backup_path: string;
   files: number;
 }
+
+// --- Сборка полной EFI одной кнопкой ---
+
+export interface FullEfiProgress {
+  stage: string;
+  message: string;
+  percent: number;
+}
+
+/** installed | updated | skipped_same | skipped_foreign */
+export type Bootx64Outcome = "installed" | "updated" | "skipped_same" | "skipped_foreign";
+
+export interface FullEfiReport {
+  efi_dir: string;
+  oc_dir: string;
+  opencore_version: string | null;
+  files_installed: string[];
+  bootx64: Bootx64Outcome;
+  bootx64_note: string | null;
+  config_source: string;
+  config_path: string | null;
+  config_patched: boolean;
+  config_backup: boolean;
+  canopy_enabled: boolean;
+  resources_installed: string[];
+  backup_path?: string | null;
+  audit_warnings?: string[];
+  warnings: string[];
+}

@@ -267,6 +267,34 @@ pub fn download_ssdts_to_efi(
     })
 }
 
+/// Сборка полной EFI одной кнопкой: OpenCorePkg + OcBinaryData → готовая EFI.
+/// Пишет только внутрь EFI/OC и EFI/BOOT; чужой BOOTX64.EFI не трогается.
+#[tauri::command]
+pub fn build_full_efi_to_efi(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+) -> Result<openefi_core::opencore::FullEfiReport, String> {
+    use tauri::Emitter;
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked = DialogExt::dialog(&window)
+        .file()
+        .set_title("Выберите EFI-папку или диск, куда собрать полную EFI")
+        .blocking_pick_folder();
+
+    let Some(picked) = picked else {
+        return Err("Выбор папки отменён".into());
+    };
+    let base = picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь к папке")?;
+
+    openefi_core::opencore::build_full_efi(&base, |pr| {
+        let _ = app.emit("fullefi-progress", pr);
+    })
+}
+
 /// Скачать утилиту USBToolBox (windows|macos) через диалог сохранения
 #[tauri::command]
 pub fn download_utb_tool(window: tauri::WebviewWindow, target: String) -> Result<String, String> {

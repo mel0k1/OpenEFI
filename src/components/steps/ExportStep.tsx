@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EfiAuditCard } from "@/components/EfiAuditCard";
+import { FullEfiBuildCard } from "@/components/FullEfiBuildCard";
 
 interface Props {
   report: HardwareReport;
@@ -92,6 +93,16 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
       </Card>
 
       <EfiAuditCard />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">{t("fullefi.title")}</CardTitle>
+          <CardDescription className="text-xs">{t("fullefi.subtitle")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <FullEfiBuildCard />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

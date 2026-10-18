@@ -7,6 +7,7 @@ pub mod efiprotect;
 pub mod hardware;
 pub mod kexts;
 pub mod macos;
+pub mod opencore;
 pub mod smbios;
 pub mod ssdts;
 pub mod usbmap;

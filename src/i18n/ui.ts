@@ -262,6 +262,32 @@ export const ru: Record<string, string> = {
   "efia.safe.3": "Пишет только в EFI/OC: Kexts, ACPI, config.plist",
   "efia.safe.4":
     "Перед установкой кекстов и SSDT автоматически снимает бэкап EFI/OC → EFI/OC.bak-openefi-<дата>",
+
+  "fullefi.title": "Сборка полной EFI одной кнопкой",
+  "fullefi.subtitle":
+    "OpenEFI сам скачает OpenCorePkg (загрузчик) и OcBinaryData (HfsPlus, иконки) и соберёт готовую EFI — последний ручной шаг больше не нужен.",
+  "fullefi.desc":
+    "Скачивается последний релиз OpenCorePkg (BOOTx64.efi, OpenCore.efi, OpenRuntime.efi, OpenCanopy.efi, записи Reset NVRAM/SIP) и OcBinaryData (HfsPlus.efi + ресурсы пикера). Драйверы включаются в UEFI → Drivers config.plist. Чужой BOOTX64.EFI и другие загрузчики не трогаются.",
+  "fullefi.includes":
+    "OpenCore + OpenRuntime + HfsPlus + графический пикер, ~40 МБ трафика",
+  "fullefi.build": "Выбрать EFI-папку и собрать полную EFI",
+  "fullefi.building": "Собираю…",
+  "fullefi.preparing": "Готовлю…",
+  "fullefi.done": "Полная EFI собрана · OpenCore {version}",
+  "fullefi.bootx64Label": "BOOTX64.EFI:",
+  "fullefi.bootx64.installed": "установлен (файла не было)",
+  "fullefi.bootx64.updated": "обновлён (старый OpenCore)",
+  "fullefi.bootx64.skipped_same": "уже совпадает с новой версией — не тронут",
+  "fullefi.bootx64.skipped_foreign": "чужой загрузчик — не тронут, запускайте OpenCore через EFI/OC/OpenCore.efi",
+  "fullefi.configLabel": "config.plist:",
+  "fullefi.configExisting": "использован ваш",
+  "fullefi.configSample": "положен Sample.plist — обязательно сгенерируйте свой конфиг!",
+  "fullefi.configPatched": "драйверы включены в UEFI → Drivers",
+  "fullefi.canopy": "графический пикер включён",
+  "fullefi.resources": "ресурсы пикера: {dirs}",
+  "fullefi.configBackup": "Резервная копия конфига: {path}.bak-openefi",
+  "fullefi.backup": "Бэкап EFI/OC сделан: {path}",
+  "fullefi.warnings": "Предупреждения",
 };
 
 export const en: Record<string, string> = {
@@ -523,4 +549,30 @@ export const en: Record<string, string> = {
   "efia.safe.3": "Writes only inside EFI/OC: Kexts, ACPI, config.plist",
   "efia.safe.4":
     "Before every kext/SSDT install it automatically backs up EFI/OC → EFI/OC.bak-openefi-<date>",
+
+  "fullefi.title": "One-click full EFI assembly",
+  "fullefi.subtitle":
+    "OpenEFI downloads OpenCorePkg (bootloader) and OcBinaryData (HfsPlus, picker assets) itself and assembles a ready EFI — no more manual copying.",
+  "fullefi.desc":
+    "Downloads the latest OpenCorePkg release (BOOTx64.efi, OpenCore.efi, OpenRuntime.efi, OpenCanopy.efi, Reset NVRAM/SIP entries) and OcBinaryData (HfsPlus.efi + picker resources). Drivers are registered in the config.plist UEFI → Drivers section. Foreign BOOTX64.EFI and other bootloaders are never touched.",
+  "fullefi.includes":
+    "OpenCore + OpenRuntime + HfsPlus + graphical picker, ~40 MB download",
+  "fullefi.build": "Pick EFI folder and assemble full EFI",
+  "fullefi.building": "Assembling…",
+  "fullefi.preparing": "Preparing…",
+  "fullefi.done": "Full EFI assembled · OpenCore {version}",
+  "fullefi.bootx64Label": "BOOTX64.EFI:",
+  "fullefi.bootx64.installed": "installed (file was missing)",
+  "fullefi.bootx64.updated": "updated (old OpenCore)",
+  "fullefi.bootx64.skipped_same": "already matches the new version — untouched",
+  "fullefi.bootx64.skipped_foreign": "foreign bootloader — untouched, launch OpenCore via EFI/OC/OpenCore.efi",
+  "fullefi.configLabel": "config.plist:",
+  "fullefi.configExisting": "your config kept",
+  "fullefi.configSample": "Sample.plist placed — make sure to generate your own config!",
+  "fullefi.configPatched": "drivers enabled in UEFI → Drivers",
+  "fullefi.canopy": "graphical picker enabled",
+  "fullefi.resources": "picker resources: {dirs}",
+  "fullefi.configBackup": "Config backup saved: {path}.bak-openefi",
+  "fullefi.backup": "EFI/OC backed up: {path}",
+  "fullefi.warnings": "Warnings",
 };

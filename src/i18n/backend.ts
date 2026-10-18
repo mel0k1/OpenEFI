@@ -259,6 +259,39 @@ export const BACKEND_EN: Record<string, string> = {
     "EFI/Boot contains a foreign BOOTX64.EFI — OpenEFI never overwrites this file",
   "OpenCore не найден в EFI/OC — бэкапить нечего":
     "OpenCore not found in EFI/OC — nothing to back up",
+
+  // --- Сборка полной EFI: этапы и предупреждения ---
+  "Проверка EFI-папки и резервное копирование…":
+    "Checking the EFI folder and backing up…",
+  "Определяю последнюю версию OpenCore…": "Resolving the latest OpenCore version…",
+  "Скачиваю OpenCorePkg…": "Downloading OpenCorePkg…",
+  "Распаковываю загрузчик OpenCore…": "Extracting the OpenCore bootloader…",
+  "Скачиваю OcBinaryData (HfsPlus, Resources)…":
+    "Downloading OcBinaryData (HfsPlus, Resources)…",
+  "Распаковываю HfsPlus и Resources…": "Extracting HfsPlus and Resources…",
+  "Настраиваю config.plist (драйверы, пикер)…":
+    "Configuring config.plist (drivers, picker)…",
+  "Готово": "Done",
+  "EFI/BOOT/BOOTX64.EFI принадлежит другому загрузчику — OpenEFI его не тронул. Запускайте OpenCore через EFI/OC/OpenCore.efi (выберите его в BIOS/NVRAM или назначьте BootNext)":
+    "EFI/BOOT/BOOTX64.EFI belongs to another bootloader — OpenEFI left it untouched. Launch OpenCore via EFI/OC/OpenCore.efi (pick it in the BIOS/NVRAM or set BootNext)",
+  "в EFI/OC не было config.plist — положен Sample.plist из OpenCorePkg: он ничего не загружает, обязательно сгенерируйте свой конфиг (шаг «Конфиг»)":
+    "there was no config.plist in EFI/OC — Sample.plist from OpenCorePkg was placed: it loads nothing, make sure to generate your own config (the “Config” step)",
+  "config.plist не найден и в архиве OpenCorePkg нет Sample.plist — добавьте конфиг вручную":
+    "config.plist not found and the OpenCorePkg archive has no Sample.plist — add a config manually",
+  "в архиве OpenCorePkg нет X64/EFI/BOOT/BOOTx64.efi":
+    "no X64/EFI/BOOT/BOOTx64.efi in the OpenCorePkg archive",
+  "в архиве OpenCorePkg нет X64/EFI/OC/OpenCore.efi":
+    "no X64/EFI/OC/OpenCore.efi in the OpenCorePkg archive",
+  "в архиве OpenCorePkg нет OpenRuntime.efi": "no OpenRuntime.efi in the OpenCorePkg archive",
+  "в архиве OcBinaryData нет Drivers/HfsPlus.efi — структура репозитория изменилась?":
+    "no Drivers/HfsPlus.efi in the OcBinaryData archive — did the repository structure change?",
+  "в config.plist нет секции UEFI": "no UEFI section in config.plist",
+  "UEFI → Drivers в config.plist — не массив": "UEFI → Drivers in config.plist is not an array",
+  "не создать UEFI → Drivers": "cannot create UEFI → Drivers",
+  "Resources подозрительно большие (zip-bomb?)": "Resources look suspiciously large (zip-bomb?)",
+  "GitHub не вернул Location для releases/latest":
+    "GitHub did not return a Location header for releases/latest",
+  "нет связи с GitHub (OpenCorePkg)": "no connection to GitHub (OpenCorePkg)",
 };
 
 // Динамические строки бэкенда: подстановки вида "AMD {codename}: серверная SMBIOS"
@@ -288,4 +321,12 @@ export const BACKEND_PATTERNS: [RegExp, string][] = [
   [/^не сериализовать (.+): (.+)$/, "cannot serialize $1: $2"],
   [/^(.+) — не словарь plist$/, "$1 is not a plist dictionary"],
   [/^бэкап EFI\/OC не сделан: (.+)$/, "EFI/OC backup failed: $1"],
+  [/^битый ZIP-архив: (.+)$/, "corrupt ZIP archive: $1"],
+  [/^битый ZIP: (.+)$/, "corrupt ZIP: $1"],
+  [/^ошибка чтения из архива: (.+)$/, "read error from the archive: $1"],
+  [/^не определить версию OpenCore из redirect: (.+)$/, "cannot determine the OpenCore version from the redirect: $1"],
+  [/^в архиве OpenCorePkg нет (.+)$/, "no $1 in the OpenCorePkg archive"],
+  [/^config\.plist есть, но драйверы не зарегистрированы — включите их сами в UEFI → Drivers: (.+)$/,
+    "config.plist found, but drivers were not registered — enable them yourself in UEFI → Drivers: $1"],
+  [/^не создать скачанный архив: (.+)$/, "cannot open the downloaded archive: $1"],
 ];

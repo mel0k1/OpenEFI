@@ -109,6 +109,7 @@ openefi/
 │       ├── config.rs     # генерация config.plist (Sample.plist + ваши данные)
 │       ├── bios.rs       # BIOS-чеклист под железо + живые проверки Secure Boot/UEFI
 │       ├── efiprotect.rs # аудит EFI, обнаружение чужих загрузчиков, бэкап EFI/OC
+│       ├── opencore.rs   # сборка полной EFI: OpenCorePkg + OcBinaryData одной кнопкой
 │       ├── cpu_codename.rs
 │       └── db.rs         # встроенные базы (pci.ids, device IDs, модели Mac)
 └── .github/workflows/    # CI: тесты + сборка под 3 ОС + авто-релизы
@@ -124,6 +125,7 @@ openefi/
 - [x] Скачивание SSDT .aml из репозитория Dortania в EFI/OC/ACPI + правка ACPI/Add — v0.5.0
 - [x] BIOS-чеклист: что включить/выключить в BIOS под ваше железо + живая проверка Secure Boot и режима загрузки — v0.6.0
 - [x] Защита EFI: аудит папки (чужие загрузчики), автоматический бэкап EFI/OC перед изменениями, гарантия невмешательства в Windows/Linux-загрузчики — v0.6.0
+- [x] Сборка полной EFI одной кнопкой: OpenCorePkg + OcBinaryData скачиваются и раскладываются автоматически, драйверы регистрируются в config.plist — v0.7.0
 
 ## 🙏 Благодарности
 
