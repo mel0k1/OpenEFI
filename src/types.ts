@@ -92,3 +92,27 @@ export interface SsdtEntry {
   url: string;
   selected: boolean;
 }
+
+export interface KextDownloadItem {
+  name: string;
+  repo: string | null;
+}
+
+export interface KextDlResult {
+  name: string;
+  ok: boolean;
+  version: string | null;
+  installed: string[];
+  message: string | null;
+}
+
+export interface KextsToEfiReport {
+  kexts_dir: string;
+  results: KextDlResult[];
+}
+
+export interface KextDlProgress {
+  done: number;
+  total: number;
+  kext: string;
+}

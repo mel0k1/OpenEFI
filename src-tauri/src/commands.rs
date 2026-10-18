@@ -155,3 +155,31 @@ pub fn save_config_plist(
         None => Err("Сохранение отменено".into()),
     }
 }
+
+#[tauri::command]
+pub fn download_kexts_to_efi(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    kexts: Vec<openefi_core::downloader::KextDownloadItem>,
+    darwin: u32,
+) -> Result<openefi_core::downloader::KextsToEfiReport, String> {
+    use tauri::Emitter;
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked = DialogExt::dialog(&window)
+        .file()
+        .set_title("Выберите EFI-папку или диск с EFI")
+        .blocking_pick_folder();
+
+    let Some(picked) = picked else {
+        return Err("Выбор папки отменён".into());
+    };
+    let base = picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь к папке")?;
+
+    openefi_core::downloader::download_kexts(&kexts, &base, darwin, |pr| {
+        let _ = app.emit("kext-dl-progress", pr);
+    })
+}

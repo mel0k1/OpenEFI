@@ -5,6 +5,7 @@ import type { KextEntry } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { EfiInstallCard } from "@/components/EfiInstallCard";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
@@ -67,6 +68,8 @@ export function KextsStep({ kexts, onToggle, darwin }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      <EfiInstallCard kexts={kexts} darwin={darwin} />
 
       <div className="relative">
         <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />

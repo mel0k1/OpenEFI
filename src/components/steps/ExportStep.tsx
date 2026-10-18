@@ -101,7 +101,7 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
           <ol className="space-y-2 text-xs leading-relaxed">
             {[
               "Скачайте OpenCorePkg и соберите базовую EFI-папку (Utilities → BootInstall).",
-              "Скачайте кексты из списка выше (кнопки-ссылки на шаге «Кексты») и положите в EFI/OC/Kexts.",
+              "Скачайте кексты кнопкой «Выбрать EFI-папку и скачать» на шаге «Кексты» — они распакуются в EFI/OC/Kexts.",
               "Настройте config.plist: ACPI, Kernel → Add (снапшот через ProperTree), PlatformInfo с данными SMBIOS.",
               "Замапьте USB-порты утилитой USBToolBox и замените UTBDefault на свой UTBMap.",
               "В BIOS включите UEFI, Above 4G Decoding, отключите Secure Boot и Resizable BAR.",

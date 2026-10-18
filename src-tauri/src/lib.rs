@@ -18,6 +18,7 @@ pub fn run() {
             commands::recommend_ssdt,
             commands::generate_config_plist,
             commands::save_config_plist,
+            commands::download_kexts_to_efi,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
