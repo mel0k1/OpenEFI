@@ -102,3 +102,56 @@ pub fn export_report(
         None => Err("Сохранение отменено".into()),
     }
 }
+
+#[tauri::command]
+pub fn recommend_ssdt(report: HardwareReport) -> Vec<openefi_core::ssdts::SsdtEntry> {
+    openefi_core::ssdts::recommend(&report)
+}
+
+#[tauri::command]
+pub fn generate_config_plist(
+    report: HardwareReport,
+    kexts: Vec<openefi_core::kexts::KextEntry>,
+    ssdts: Vec<openefi_core::ssdts::SsdtEntry>,
+    smbios: SmbiosData,
+    darwin: u32,
+) -> Result<String, String> {
+    let input = openefi_core::config::ConfigInput {
+        report: &report,
+        kexts: &kexts,
+        ssdts: &ssdts,
+        smbios: &smbios,
+        darwin,
+    };
+    let bytes = openefi_core::config::generate_config(&input)?;
+    String::from_utf8(bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn save_config_plist(
+    window: tauri::WebviewWindow,
+    report: HardwareReport,
+    kexts: Vec<openefi_core::kexts::KextEntry>,
+    ssdts: Vec<openefi_core::ssdts::SsdtEntry>,
+    smbios: SmbiosData,
+    darwin: u32,
+) -> Result<String, String> {
+    let xml = generate_config_plist(report, kexts, ssdts, smbios, darwin)?;
+    let path = tauri_plugin_dialog::DialogExt::dialog(&window)
+        .file()
+        .set_file_name("config.plist")
+        .add_filter("Plist конфиг OpenCore", &["plist"])
+        .blocking_save_file();
+
+    match path {
+        Some(p) => {
+            let target = p
+                .as_path()
+                .map(|q| q.to_path_buf())
+                .ok_or("недопустимый путь")?;
+            std::fs::write(&target, xml).map_err(|e| e.to_string())?;
+            Ok(target.to_string_lossy().to_string())
+        }
+        None => Err("Сохранение отменено".into()),
+    }
+}

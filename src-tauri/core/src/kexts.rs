@@ -116,6 +116,17 @@ static KEXTS: &[KextDef] = &[
     k("BigSurface", "Комплексная поддержка устройств Microsoft Surface", "Брендовые", false, 20, LATEST, &["Lilu"], Some("VoodooI2C/BigSurface")),
 ];
 
+/// Границы поддержки macOS (darwin) для кекта по имени
+pub fn kext_bounds(name: &str) -> (Option<u32>, Option<u32>) {
+    match find(name) {
+        Some(def) => (
+            Some(def.min_darwin).filter(|v| *v > 0),
+            Some(def.max_darwin).filter(|v| *v < LATEST),
+        ),
+        None => (None, None),
+    }
+}
+
 pub fn kext_catalog() -> Vec<KextEntry> {
     KEXTS.iter().map(|k| KextEntry {
         name: k.name.to_string(),

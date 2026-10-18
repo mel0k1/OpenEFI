@@ -83,3 +83,12 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
   const { invoke } = await import("@tauri-apps/api/core");
   return invoke<T>(cmd, args);
 }
+
+export interface SsdtEntry {
+  name: string;
+  file: string;
+  description: string;
+  kind: string;
+  url: string;
+  selected: boolean;
+}

@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/mel0k1/OpenEFI?style=flat-square&label=%F0%9F%93%A6%20Release&color=181717)](https://github.com/mel0k1/OpenEFI/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/mel0k1/OpenEFI/build.yml?style=flat-square&label=%E2%99%BB%EF%B8%8F%20CI&logo=githubactions&logoColor=white)](https://github.com/mel0k1/OpenEFI/actions)
-[![Tests](https://img.shields.io/badge/%F0%9F%A7%AA%20Tests-11%20passing-brightgreen?style=flat-square)](https://github.com/mel0k1/OpenEFI/actions)
+[![Tests](https://img.shields.io/badge/%F0%9F%A7%AA%20Tests-22%20passing-brightgreen?style=flat-square)](https://github.com/mel0k1/OpenEFI/actions)
 [![License](https://img.shields.io/github/license/mel0k1/OpenEFI?style=flat-square&label=%F0%9F%93%84%20License&color=green)](LICENSE)
 [![Platform](https://img.shields.io/badge/%F0%9F%96%A5%EF%B8%8F%20Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/mel0k1/OpenEFI/releases)
 
@@ -35,7 +35,9 @@
 | 🍎 | **Совместимость macOS** | Оценка максимальной версии по GPU (NVIDIA / AMD / Intel iGPU) и поколению процессора |
 | 💻 | **SMBIOS** | Рекомендация модели Mac по железу + каталог из 77 моделей с полными данными |
 | 🔑 | **Генерация серийников** | Serial, MLB (с контрольной суммой), ROM и UUID — полный порт алгоритма macserial из OpenCorePkg на Rust |
-| 📤 | **Экспорт отчёта** | JSON со всеми данными — для config.plist и помощи на форумах |
+| 📋 | **config.plist** | Полный конфиг OpenCore на базе Sample.plist: ACPI/Add, Kernel/Add (правильный порядок кекстов), DeviceProperties для iGPU, PlatformInfo с вашими серийниками |
+| 🧾 | **Подбор SSDT** | Матрица Dortania по железу: PLUG, EC-USBX, AWAC, PMC, XOSI и другие — с готовыми ссылками |
+| 📤 | **Экспорт отчёта** | JSON со всеми данными — для помощи на форумах |
 | 🌗 | **Тёмная и светлая тема** | Переключение одним кликом, интерфейс на русском |
 
 ## 🖼️ Интерфейс
@@ -100,6 +102,8 @@ openefi/
 │       ├── hardware.rs   # сканирование PCI/USB/CPU (3 ОС)
 │       ├── kexts.rs      # база кекстов и алгоритм подбора
 │       ├── smbios.rs     # SMBIOS + порт macserial
+│       ├── ssdts.rs      # матрица SSDT из гайда Dortania
+│       ├── config.rs     # генерация config.plist (Sample.plist + ваши данные)
 │       ├── cpu_codename.rs
 │       └── db.rs         # встроенные базы (pci.ids, device IDs, модели Mac)
 └── .github/workflows/    # CI: тесты + сборка под 3 ОС + авто-релизы
@@ -107,9 +111,9 @@ openefi/
 
 ## 🗺️ Дорожная карта
 
-- [ ] Генерация `config.plist` (разделы ACPI / Kernel / PlatformInfo)
-- [ ] Подбор SSDT по железу из репозитория Dortania
-- [ ] Скачивание кекстов прямо в EFI-папку
+- [x] Генерация `config.plist` (ACPI / Kernel / DeviceProperties / PlatformInfo) — v0.2.0
+- [x] Подбор SSDT по железу из матрицы Dortania — v0.2.0
+- [ ] Скачивание кекстов и SSDT (.aml) прямо в EFI-папку
 - [ ] USB-маппинг: интеграция с USBToolBox
 - [ ] Английская локализация
 

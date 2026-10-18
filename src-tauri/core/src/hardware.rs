@@ -56,6 +56,8 @@ pub struct PciDevice {
     pub device: String,
     pub class: u32,
     pub name_hint: Option<String>,
+    /// PnP-класс устройства (только Windows: "Display", "Net", "Media"...)
+    pub pnp_class: Option<String>,
 }
 
 pub fn scan() -> HardwareReport {
@@ -168,6 +170,7 @@ fn scan_pci_linux() -> Result<Vec<PciDevice>, String> {
                 u.lines().find(|l| l.starts_with("PCI_ID")).map(|l| l.to_string())
             });
         devices.push(PciDevice {
+            pnp_class: None,
             vendor,
             device,
             class,
@@ -182,7 +185,7 @@ fn scan_pci_windows() -> Result<Vec<PciDevice>, String> {
         .args([
             "-NoProfile",
             "-Command",
-            "Get-CimInstance Win32_PnPEntity | Where-Object { $_.DeviceID -like 'PCI\\*' } | Select-Object -ExpandProperty DeviceID",
+            "Get-CimInstance Win32_PnPEntity | Where-Object { $_.DeviceID -like 'PCI\\VEN_*' } | ForEach-Object { [string]$_.PNPClass + '|' + [string]$_.Name + '|' + $_.DeviceID }",
         ])
         .output()
         .map_err(|e| e.to_string())?;
@@ -190,20 +193,37 @@ fn scan_pci_windows() -> Result<Vec<PciDevice>, String> {
     let mut devices = Vec::new();
     for line in text.lines() {
         let line = line.trim();
-        let lower = line.to_lowercase();
-        let vendor = extract_hex_field(&lower, "ven_").unwrap_or_default();
-        let device = extract_hex_field(&lower, "dev_").unwrap_or_default();
-        if vendor.is_empty() || device.is_empty() {
-            continue;
+        if let Some((pnp_class, name, vendor, device)) = parse_windows_pnp_line(line) {
+            devices.push(PciDevice {
+                vendor,
+                device,
+                class: 0,
+                name_hint: name,
+                pnp_class: pnp_class.map(|c| c.to_lowercase()),
+            });
         }
-        devices.push(PciDevice {
-            vendor,
-            device,
-            class: 0,
-            name_hint: Some(line.to_string()),
-        });
     }
     Ok(devices)
+}
+
+/// Разбор строки формата "PNPClass|Name|DeviceID", полученной из Win32_PnPEntity.
+/// PNPClass может быть пустым; DeviceID обязан содержать VEN_/DEV_.
+fn parse_windows_pnp_line(line: &str) -> Option<(Option<String>, Option<String>, String, String)> {
+    if line.is_empty() {
+        return None;
+    }
+    let mut parts = line.splitn(3, '|');
+    let pnp_class = parts.next().unwrap_or("").trim();
+    let name = parts.next().unwrap_or("").trim();
+    let device_id = parts.next().unwrap_or("").trim().to_lowercase();
+    let vendor = extract_hex_field(&device_id, "ven_")?;
+    let device = extract_hex_field(&device_id, "dev_")?;
+    if vendor.is_empty() || device.is_empty() {
+        return None;
+    }
+    let class = if pnp_class.is_empty() { None } else { Some(pnp_class.to_string()) };
+    let hint = if name.is_empty() || name == device_id { None } else { Some(name.to_string()) };
+    Some((class, hint, vendor, device))
 }
 
 fn scan_pci_macos() -> Result<Vec<PciDevice>, String> {
@@ -236,6 +256,7 @@ fn scan_pci_macos() -> Result<Vec<PciDevice>, String> {
                 continue;
             }
             devices.push(PciDevice {
+            pnp_class: None,
                 vendor,
                 device,
                 class: 0,
@@ -266,6 +287,7 @@ fn scan_usb(os: &str) -> Result<Vec<PciDevice>, String> {
                         .unwrap_or_default()
                         .to_lowercase();
                     devices.push(PciDevice {
+            pnp_class: None,
                         vendor,
                         device,
                         class: 0,
@@ -294,6 +316,7 @@ fn scan_usb(os: &str) -> Result<Vec<PciDevice>, String> {
                     continue;
                 }
                 devices.push(PciDevice {
+            pnp_class: None,
                     vendor,
                     device,
                     class: 0,
@@ -327,6 +350,7 @@ fn scan_usb(os: &str) -> Result<Vec<PciDevice>, String> {
                             .to_lowercase();
                         if !vendor.is_empty() {
                             devices.push(PciDevice {
+            pnp_class: None,
                                 vendor,
                                 device,
                                 class: 0,
@@ -441,6 +465,7 @@ fn classify_gpus(pci: &[PciDevice], cpu_codename: &Option<String>, cpu_manufactu
     for dev in pci {
         let class_major = dev.class >> 16;
         let is_display_pci = class_major == 0x03;
+        let is_display_pnp = dev.pnp_class.as_deref() == Some("display");
         let is_display_hint = dev
             .name_hint
             .as_ref()
@@ -450,7 +475,7 @@ fn classify_gpus(pci: &[PciDevice], cpu_codename: &Option<String>, cpu_manufactu
                     || l.contains("radeon") || l.contains("geforce")
             })
             .unwrap_or(false);
-        if !is_display_pci && !is_display_hint {
+        if !is_display_pci && !is_display_pnp && !is_display_hint {
             continue;
         }
         let _vendor_name = db.vendor_name(&dev.vendor).unwrap_or("Unknown").to_string();
@@ -516,6 +541,12 @@ fn gpu_macos_limits(vendor: &str, name: &str, device_type: &str) -> (Option<u32>
         if n.contains("navi 2") || n.contains("navi2") {
             return (Some(24), Some("RDNA 2: нативно до Sequoia 15, нужен NootRX/WhateverGreen".into()));
         }
+        if n.contains("polaris") || n.contains("lexa") || n.contains("ellesmere") || n.contains("baffin") {
+            return (
+                Some(22),
+                Some("Polaris: нативно до Ventura 13; в Sonoma 14+ — только через OCLP".into()),
+            );
+        }
         return (None, None);
     }
     if vendor == "8086" && device_type == "Integrated GPU" {
@@ -557,6 +588,7 @@ fn classify_network(pci: &[PciDevice], usb: &[PciDevice]) -> Vec<DeviceInfo> {
         let class_sub = (dev.class >> 8) & 0xff;
         let is_eth = class_major == 0x02 && class_sub == 0x00;
         let is_wireless = class_major == 0x02 && (class_sub == 0x80 || class_sub == 0x20);
+        let is_net_pnp = dev.pnp_class.as_deref() == Some("net");
         let hinted = dev
             .name_hint
             .as_ref()
@@ -564,9 +596,10 @@ fn classify_network(pci: &[PciDevice], usb: &[PciDevice]) -> Vec<DeviceInfo> {
                 let l = h.to_lowercase();
                 l.contains("ethernet") || l.contains("network") || l.contains("wi-fi")
                     || l.contains("wireless") || l.contains("wifi") || l.contains("wlan")
+                    || l.contains("802.11")
             })
             .unwrap_or(false);
-        if !is_eth && !is_wireless && !hinted {
+        if !is_eth && !is_wireless && !is_net_pnp && !hinted {
             continue;
         }
         let full_id = format!("{}-{}", dev.vendor.to_uppercase(), dev.device.to_uppercase());
@@ -655,12 +688,13 @@ fn classify_audio(pci: &[PciDevice], os: &str) -> Vec<DeviceInfo> {
         let class_sub = (dev.class >> 8) & 0xff;
         let is_audio = (class_major == 0x04 && class_sub == 0x03)
             || (class_major == 0x04 && class_sub == 0x01);
+        let audio_pnp = matches!(dev.pnp_class.as_deref(), Some("media") | Some("audio"));
         let hinted = dev
             .name_hint
             .as_ref()
             .map(|h| h.to_lowercase().contains("audio"))
             .unwrap_or(false);
-        if !is_audio && !hinted {
+        if !is_audio && !audio_pnp && !hinted {
             continue;
         }
         let name = db
@@ -725,4 +759,90 @@ fn classify_bluetooth(usb: &[PciDevice]) -> Vec<DeviceInfo> {
 
 pub fn in_list(id: &str, list: &[String]) -> bool {
     list.iter().any(|x| x.eq_ignore_ascii_case(id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_windows_pnp_line() {
+        // Реальный формат Win32_PnPEntity: PNPClass|Name|DeviceID
+        let (class, name, vendor, device) = parse_windows_pnp_line(
+            "Display|Radeon RX 550 Series|PCI\\VEN_1002&DEV_699F&SUBSYS_C57017AA&REV_C1\\4&1B4B2C3&0&0008",
+        )
+        .unwrap();
+        assert_eq!(class.as_deref(), Some("Display"));
+        assert_eq!(name.as_deref(), Some("Radeon RX 550 Series"));
+        assert_eq!(vendor, "1002");
+        assert_eq!(device, "699f");
+
+        // пустой PNPClass
+        let (class, name, vendor, device) = parse_windows_pnp_line(
+            "|Some Device|PCI\\VEN_10EC&DEV_8168&SUBSYS_85051043&REV_15\\4&1C9E2F3&0&00E5",
+        )
+        .unwrap();
+        assert_eq!(class, None);
+        assert_eq!(name.as_deref(), Some("Some Device"));
+        assert_eq!(vendor, "10ec");
+        assert_eq!(device, "8168");
+
+        // без VEN_/DEV_ — отбрасывается
+        assert!(parse_windows_pnp_line("Display|Screen|USB\\VID_1234&PID_5678").is_none());
+        assert!(parse_windows_pnp_line("").is_none());
+    }
+
+    #[test]
+    fn test_classify_gpus_windows_rx550() {
+        // Симуляция Windows-скана: class=0, но pnp_class=Display
+        let dev = PciDevice {
+            vendor: "1002".into(),
+            device: "699f".into(),
+            class: 0,
+            name_hint: Some("Radeon RX 550 Series".into()),
+            pnp_class: Some("display".into()),
+        };
+        let gpus = classify_gpus(&[dev], &Some("Coffee Lake-S".into()), "GenuineIntel");
+        assert_eq!(gpus.len(), 1, "RX 550 должна определяться как GPU");
+        let gpu = &gpus[0];
+        assert_eq!(gpu.device_type, "Discrete GPU");
+        assert!(gpu.name.to_lowercase().contains("radeon"), "имя: {}", gpu.name);
+        assert_eq!(gpu.max_darwin, Some(22), "Polaris нативно до Ventura (darwin 22)");
+    }
+
+    #[test]
+    fn test_classify_network_and_audio_windows() {
+        let net = PciDevice {
+            vendor: "10ec".into(),
+            device: "8168".into(),
+            class: 0,
+            name_hint: Some("Realtek Gaming GbE Family Controller".into()),
+            pnp_class: Some("net".into()),
+        };
+        let audio = PciDevice {
+            vendor: "8086".into(),
+            device: "a0c8".into(),
+            class: 0,
+            name_hint: Some("Intel Smart Sound Technology".into()),
+            pnp_class: Some("media".into()),
+        };
+        let gpu = PciDevice {
+            vendor: "8086".into(),
+            device: "9bc4".into(),
+            class: 0,
+            name_hint: Some("Intel(R) UHD Graphics 630".into()),
+            pnp_class: Some("display".into()),
+        };
+        let pci = vec![net, audio, gpu];
+        let gpus = classify_gpus(&pci, &Some("Comet Lake-S".into()), "GenuineIntel");
+        assert_eq!(gpus.len(), 1);
+        assert_eq!(gpus[0].device_type, "Integrated GPU");
+
+        let net_out = classify_network(&pci, &[]);
+        assert_eq!(net_out.len(), 1, "сеть по pnp_class=Net должна находиться");
+        assert_eq!(net_out[0].kind, "Ethernet");
+
+        let audio_out = classify_audio(&pci, "windows");
+        assert_eq!(audio_out.len(), 1, "аудио по pnp_class=Media должно находиться");
+    }
 }

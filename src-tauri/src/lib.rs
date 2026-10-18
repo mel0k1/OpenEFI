@@ -15,6 +15,9 @@ pub fn run() {
             commands::list_smbios_models,
             commands::generate_smbios,
             commands::export_report,
+            commands::recommend_ssdt,
+            commands::generate_config_plist,
+            commands::save_config_plist,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

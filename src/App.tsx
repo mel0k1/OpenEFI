@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Cpu, CpuIcon, HardDrive, MemoryStick, MonitorSmartphone, Settings } from "lucide-react";
 import { invoke } from "@/types";
-import type { HardwareReport, KextEntry, MacosVersion, SmbiosData, SmbiosRecommendation } from "@/types";
+import type { HardwareReport, KextEntry, MacosVersion, SmbiosData, SmbiosRecommendation, SsdtEntry } from "@/types";
 import { useTheme } from "@/hooks/useTheme";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,10 @@ import { WelcomeStep } from "@/components/steps/WelcomeStep";
 import { HardwareStep } from "@/components/steps/HardwareStep";
 import { KextsStep } from "@/components/steps/KextsStep";
 import { SmbiosStep } from "@/components/steps/SmbiosStep";
+import { ConfigStep } from "@/components/steps/ConfigStep";
 import { ExportStep } from "@/components/steps/ExportStep";
 
-const STEPS = ["Начало", "Железо", "Кексты", "SMBIOS", "Экспорт"];
+const STEPS = ["Начало", "Железо", "Кексты", "SMBIOS", "Конфиг", "Экспорт"];
 
 export default function App() {
   const { dark, toggle } = useTheme();
@@ -26,6 +27,7 @@ export default function App() {
   const [recommendation, setRecommendation] = useState<SmbiosRecommendation | null>(null);
   const [smbiosModel, setSmbiosModel] = useState<string>("");
   const [smbiosData, setSmbiosData] = useState<SmbiosData | null>(null);
+  const [ssdts, setSsdts] = useState<SsdtEntry[]>([]);
 
   const scan = useCallback(async () => {
     setScanning(true);
@@ -41,6 +43,8 @@ export default function App() {
       const rec = await invoke<SmbiosRecommendation>("recommend_smbios", { report: r, darwin: Math.min(24, max) });
       setRecommendation(rec);
       setSmbiosModel(rec.recommended);
+      const s = await invoke<SsdtEntry[]>("recommend_ssdt", { report: r });
+      setSsdts(s);
       setStep(1);
     } catch (e) {
       console.error(e);
@@ -65,6 +69,10 @@ export default function App() {
 
   const toggleKext = useCallback((name: string) => {
     setKexts((prev) => prev.map((k) => (k.name === name ? { ...k, selected: !k.selected } : k)));
+  }, []);
+
+  const toggleSsdt = useCallback((name: string) => {
+    setSsdts((prev) => prev.map((s) => (s.name === name ? { ...s, selected: !s.selected } : s)));
   }, []);
 
   useEffect(() => {
@@ -144,7 +152,17 @@ export default function App() {
               onData={setSmbiosData}
             />
           )}
-          {step === 4 && report && (
+          {step === 4 && (
+            <ConfigStep
+              report={report!}
+              ssdts={ssdts}
+              onToggleSsdt={toggleSsdt}
+              kexts={kexts}
+              smbios={smbiosData}
+              darwin={darwin}
+            />
+          )}
+          {step === 5 && report && (
             <ExportStep
               report={report}
               kexts={kexts.filter((k) => k.selected)}
@@ -181,8 +199,8 @@ export default function App() {
             </span>
           )}
         </div>
-        {step < 4 ? (
-          <Button disabled={!canNext} onClick={() => setStep((s) => Math.min(4, s + 1))}>
+        {step < 5 ? (
+          <Button disabled={!canNext} onClick={() => setStep((s) => Math.min(5, s + 1))}>
             Далее
           </Button>
         ) : (
