@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Check, Download, ExternalLink, FileJson, Loader2 } from "lucide-react";
 import type { HardwareReport, KextEntry, SmbiosData } from "@/types";
 import { invoke } from "@/types";
+import { useI18n } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export function ExportStep({ report, kexts, smbios, darwin }: Props) {
+  const { t, tb } = useI18n();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,17 +41,15 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
     <div className="space-y-5">
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Итоговая конфигурация</CardTitle>
-          <CardDescription className="text-xs">
-            Сводка по вашему железу, целевой macOS и подобранным кекстам
-          </CardDescription>
+          <CardTitle className="text-sm">{t("exp.title")}</CardTitle>
+          <CardDescription className="text-xs">{t("exp.desc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-xs">
-          <SummaryRow label="Процессор" value={`${report.cpu.name} (${report.cpu.codename ?? "?"})`} />
-          <SummaryRow label="Платформа" value={`${report.platform} · ${report.board_name}`} />
+          <SummaryRow label={t("exp.cpu")} value={`${report.cpu.name} (${report.cpu.codename ?? "?"})`} />
+          <SummaryRow label={t("exp.platform")} value={`${report.platform} · ${report.board_name}`} />
           <SummaryRow
-            label="Видеокарты"
-            value={report.gpus.map((g) => g.name).join(", ") || "нет"}
+            label={t("exp.gpus")}
+            value={report.gpus.map((g) => g.name).join(", ") || t("exp.none")}
           />
           <SummaryRow
             label="macOS"
@@ -57,7 +57,7 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
           />
           <div>
             <div className="text-muted-foreground mb-1.5">
-              Кексты ({kexts.length}):
+              {t("exp.kexts", { n: kexts.length })}
             </div>
             <div className="flex flex-wrap gap-1.5">
               {kexts.map((k) => (
@@ -92,20 +92,18 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Что дальше</CardTitle>
-          <CardDescription className="text-xs">
-            Перед установкой macOS выполните эти шаги
-          </CardDescription>
+          <CardTitle className="text-sm">{t("exp.nextTitle")}</CardTitle>
+          <CardDescription className="text-xs">{t("exp.nextDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
           <ol className="space-y-2 text-xs leading-relaxed">
             {[
-              "Скачайте OpenCorePkg и соберите базовую EFI-папку (Utilities → BootInstall).",
-              "Скачайте кексты кнопкой «Выбрать EFI-папку и скачать» на шаге «Кексты» — они распакуются в EFI/OC/Kexts.",
-              "Настройте config.plist: ACPI, Kernel → Add (снапшот через ProperTree), PlatformInfo с данными SMBIOS.",
-              "Замапьте USB-порты утилитой USBToolBox и замените UTBDefault на свой UTBMap.",
-              "В BIOS включите UEFI, Above 4G Decoding, отключите Secure Boot и Resizable BAR.",
-              "Проверьте отчёт: сохраните JSON ниже — он пригодится при отладке и на форумах.",
+              t("exp.step1"),
+              t("exp.step2"),
+              t("exp.step3"),
+              t("exp.step4"),
+              t("exp.step5"),
+              t("exp.step6"),
             ].map((step, i) => (
               <li key={i} className="flex gap-2">
                 <span className="bg-primary/10 text-primary flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold">
@@ -124,7 +122,7 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
               ) : (
                 <FileJson className="size-4" />
               )}
-              {saved ? "Сохранить ещё раз" : "Сохранить отчёт JSON"}
+              {saved ? t("exp.saveAgain") : t("exp.save")}
             </Button>
             <Button variant="outline" className="gap-2" asChild>
               <a
@@ -133,19 +131,19 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
                 rel="noreferrer"
               >
                 <ExternalLink className="size-4" />
-                Гайд Dortania
+                {t("exp.guide")}
               </a>
             </Button>
           </div>
           {saved && (
             <div className="mt-3 flex items-center gap-2 text-xs text-[var(--success)]">
               <Download className="size-3.5" />
-              Отчёт сохранён: {saved}
+              {t("exp.saved", { path: saved })}
             </div>
           )}
           {error && (
             <div className="mt-3 text-xs text-[var(--destructive)]">
-              Ошибка сохранения: {error}
+              {t("exp.error", { error: tb(error) })}
             </div>
           )}
         </CardContent>

@@ -47,6 +47,8 @@ export interface KextEntry {
   status: string;
   requires: string[];
   repo: string | null;
+  /** Системный драйвер — ставится в macOS, не в EFI */
+  non_efi: boolean;
 }
 
 export interface MacosVersion {
@@ -115,4 +117,12 @@ export interface KextDlProgress {
   done: number;
   total: number;
   kext: string;
+}
+
+export interface UtbMapReport {
+  kexts_dir: string;
+  config_path: string | null;
+  backup_made: boolean;
+  utbmap_registered: boolean;
+  utbdefault_disabled: boolean;
 }

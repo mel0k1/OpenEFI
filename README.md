@@ -10,7 +10,7 @@
 
 [![Release](https://img.shields.io/github/v/release/mel0k1/OpenEFI?style=flat-square&label=%F0%9F%93%A6%20Release&color=181717)](https://github.com/mel0k1/OpenEFI/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/mel0k1/OpenEFI/build.yml?style=flat-square&label=%E2%99%BB%EF%B8%8F%20CI&logo=githubactions&logoColor=white)](https://github.com/mel0k1/OpenEFI/actions)
-[![Tests](https://img.shields.io/badge/%F0%9F%A7%AA%20Tests-31%20passing-brightgreen?style=flat-square)](https://github.com/mel0k1/OpenEFI/actions)
+[![Tests](https://img.shields.io/badge/%F0%9F%A7%AA%20Tests-36%20passing-brightgreen?style=flat-square)](https://github.com/mel0k1/OpenEFI/actions)
 [![License](https://img.shields.io/github/license/mel0k1/OpenEFI?style=flat-square&label=%F0%9F%93%84%20License&color=green)](LICENSE)
 [![Platform](https://img.shields.io/badge/%F0%9F%96%A5%EF%B8%8F%20Windows%20%7C%20macOS%20%7C%20Linux-blue?style=flat-square)](https://github.com/mel0k1/OpenEFI/releases)
 
@@ -31,15 +31,17 @@
 | | Функция | Что делает |
 |---|---|---|
 | 🔍 | **Сканирование железа** | CPU (производитель, кодовое имя, ядра, AVX2), GPU, сеть, аудио, Bluetooth — на Windows, macOS и Linux. База PCI ID встроена |
-| 🧩 | **Подбор кекстов** | Lilu, VirtualSMC, WhateverGreen, AppleALC, сетевые и Bluetooth-драйверы — по вашим PCI ID, с учётом целевой версии macOS и зависимостей |
+| 🧩 | **Подбор кекстов** | 72 кекста: Lilu, VirtualSMC, WhateverGreen, AppleALC, сетевые, Bluetooth и системные драйверы — по вашим PCI ID, с учётом целевой версии macOS и зависимостей |
 | 📥 | **Установка в EFI** | Скачивание выбранных кекстов последними релизами с GitHub и распаковка .kext прямо в EFI/OC/Kexts — без ручного копирования |
+| 🔌 | **USB-маппинг** | Интеграция с USBToolBox: скачивание утилиты для Windows/macOS, установка готового UTBMap.kext в EFI и правка config.plist (UTBMap включён, UTBDefault отключён) |
 | 🍎 | **Совместимость macOS** | Оценка максимальной версии по GPU (NVIDIA / AMD / Intel iGPU) и поколению процессора |
 | 💻 | **SMBIOS** | Рекомендация модели Mac по железу + каталог из 77 моделей с полными данными |
 | 🔑 | **Генерация серийников** | Serial, MLB (с контрольной суммой), ROM и UUID — полный порт алгоритма macserial из OpenCorePkg на Rust |
 | 📋 | **config.plist** | Полный конфиг OpenCore на базе Sample.plist: ACPI/Add, Kernel/Add (правильный порядок кекстов), DeviceProperties для iGPU, PlatformInfo с вашими серийниками |
 | 🧾 | **Подбор SSDT** | Матрица Dortania по железу: PLUG, EC-USBX, AWAC, PMC, XOSI и другие — с готовыми ссылками |
 | 📤 | **Экспорт отчёта** | JSON со всеми данными — для помощи на форумах |
-| 🌗 | **Тёмная и светлая тема** | Переключение одним кликом, интерфейс на русском |
+| 🌗 | **Тёмная и светлая тема** | Переключение одним кликом |
+| 🌍 | **Русский и английский** | Переключение языка в настройках |
 
 ## 🖼️ Интерфейс
 
@@ -115,8 +117,8 @@ openefi/
 - [x] Генерация `config.plist` (ACPI / Kernel / DeviceProperties / PlatformInfo) — v0.2.0
 - [x] Подбор SSDT по железу из матрицы Dortania — v0.2.0
 - [x] Скачивание кекстов прямо в EFI-папку (GitHub Releases → EFI/OC/Kexts) — v0.3.0
-- [ ] USB-маппинг: интеграция с USBToolBox
-- [ ] Английская локализация
+- [x] USB-маппинг: интеграция с USBToolBox (утилита + UTBMap в EFI + правка конфига) — v0.4.0
+- [x] Английская локализация (переключатель языка в настройках) — v0.4.0
 
 ## 🙏 Благодарности
 

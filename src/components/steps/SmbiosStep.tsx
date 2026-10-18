@@ -3,6 +3,7 @@ import { Fingerprint, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { invoke } from "@/types";
 import type { HardwareReport, MacDevice, SmbiosData, SmbiosRecommendation } from "@/types";
 import { useCopy } from "@/hooks/useCopy";
+import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, Copy } from "lucide-react";
@@ -26,6 +27,7 @@ export function SmbiosStep({
   data,
   onData,
 }: Props) {
+  const { t, tb } = useI18n();
   const [models, setModels] = useState<MacDevice[]>([]);
   const [generating, setGenerating] = useState(false);
   const { copied, copy } = useCopy();
@@ -57,9 +59,9 @@ export function SmbiosStep({
             </div>
             <div>
               <CardTitle className="text-sm">
-                Рекомендация: {recommendation.recommended}
+                {t("smbios.recommendation", { model: recommendation.recommended })}
               </CardTitle>
-              <CardDescription className="text-xs">{recommendation.reason}</CardDescription>
+              <CardDescription className="text-xs">{tb(recommendation.reason)}</CardDescription>
             </div>
           </CardHeader>
         </Card>
@@ -67,9 +69,9 @@ export function SmbiosStep({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Модель SMBIOS</CardTitle>
+          <CardTitle className="text-sm">{t("smbios.modelTitle")}</CardTitle>
           <CardDescription className="text-xs">
-            Совместимые с macOS {darwin} модели для платформы {report.platform}
+            {t("smbios.compatible", { darwin, platform: report.platform })}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -94,7 +96,7 @@ export function SmbiosStep({
               ))}
               {models.length === 0 && (
                 <div className="text-muted-foreground col-span-3 py-4 text-center text-xs">
-                  Загрузка списка моделей...
+                  {t("smbios.loading")}
                 </div>
               )}
             </div>
@@ -105,7 +107,7 @@ export function SmbiosStep({
             ) : (
               <RefreshCw className="size-4" />
             )}
-            {data ? "Сгенерировать заново" : "Сгенерировать SMBIOS"}
+            {data ? t("smbios.regenerate") : t("smbios.generate")}
           </Button>
         </CardContent>
       </Card>
@@ -115,11 +117,10 @@ export function SmbiosStep({
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">
               <Fingerprint className="size-4" />
-              Данные SMBIOS для {data.model}
+              {t("smbios.dataTitle", { model: data.model })}
             </CardTitle>
             <CardDescription className="text-xs">
-              Впишите их в config.plist → PlatformInfo → Generic. ROM и MLB уникальны для
-              Apple-сервисов (iMessage, FaceTime).
+              {t("smbios.dataHint")}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">

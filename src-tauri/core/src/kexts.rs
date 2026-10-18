@@ -14,6 +14,9 @@ pub struct KextEntry {
     pub status: String,
     pub requires: Vec<String>,
     pub repo: Option<String>,
+    /// Драйвер для установки в macOS, а не в EFI
+    #[serde(default)]
+    pub non_efi: bool,
 }
 
 struct KextDef {
@@ -25,6 +28,9 @@ struct KextDef {
     max_darwin: u32,
     requires: &'static [&'static str],
     repo: Option<&'static str>,
+    /// Системный драйвер: ставится внутрь macOS (Library/Extensions),
+    /// а не в EFI — исключается из Kernel/Add и из установки в EFI
+    non_efi: bool,
 }
 
 const fn k(
@@ -46,7 +52,20 @@ const fn k(
         max_darwin,
         requires,
         repo,
+        non_efi: false,
     }
+}
+
+/// Системный драйвер, устанавливаемый в macOS (не в EFI)
+const fn ksys(
+    name: &'static str,
+    description: &'static str,
+    category: &'static str,
+    min_darwin: u32,
+    max_darwin: u32,
+    repo: Option<&'static str>,
+) -> KextDef {
+    KextDef { non_efi: true, ..k(name, description, category, false, min_darwin, max_darwin, &[], repo) }
 }
 
 const LATEST: u32 = 9999;
@@ -114,6 +133,12 @@ static KEXTS: &[KextDef] = &[
     k("AsusSMC", "ALS, подсветка клавиатуры и Fn-клавиши на ноутбуках ASUS", "Брендовые", false, 0, LATEST, &["Lilu", "VirtualSMC"], Some("hieplpvip/AsusSMC")),
     k("YogaSMC", "Сенсоры и фирменные функции Lenovo IdeaPad/Yoga/ThinkPad", "Брендовые", false, 0, LATEST, &["Lilu", "VirtualSMC"], Some("zhen-zen/YogaSMC")),
     k("BigSurface", "Комплексная поддержка устройств Microsoft Surface", "Брендовые", false, 20, LATEST, &["Lilu"], Some("VoodooI2C/BigSurface")),
+    k("iBridged", "Фикс OTA-обновлений системы (плагин Lilu). Конфликтует с WhateverGreen на AMD GPU — там нужен форк Carnations", "Дополнительно", false, 0, LATEST, &["Lilu"], Some("Carnations-Botanica/iBridged")),
+    k("AMFIPass", "Обход AMFI для legacy-кекстов OCLP — возвращает Atheros/Realtek Wi-Fi на новых macOS", "Wi-Fi", false, 17, LATEST, &[], Some("kaoskinkae/AMFIPass")),
+    k("VoodooInput", "Платформа мультитач-жестов, основа для VoodooRMI и VoodooPS2", "Ввод", false, 0, LATEST, &[], Some("acidanthera/VoodooInput")),
+    k("Sinetek-rtsx", "Ридеры SD-карт на контроллерах Ricoh/Realtek RTSX", "Карт-ридеры", false, 0, LATEST, &[], Some("cholonam/Sinetek-rtsx")),
+    k("UTBMap", "Ваш маппинг USB из USBToolBox — добавьте через помощник USB на этом шаге", "USB", false, 17, LATEST, &["USBToolBox"], None),
+    ksys("NVIDIA Driver", "Metal-драйвер NVIDIA (GTX 16xx – RTX 50xx) для macOS Sequoia+ — ставится в систему, не в EFI", "Графика", 24, LATEST, Some("nullmoth/nvidia-macos-driver")),
 ];
 
 /// Границы поддержки macOS (darwin) для кекта по имени
@@ -137,6 +162,7 @@ pub fn kext_catalog() -> Vec<KextEntry> {
         status: "available".into(),
         requires: k.requires.iter().map(|s| s.to_string()).collect(),
         repo: k.repo.map(str::to_string),
+        non_efi: k.non_efi,
     }).collect()
 }
 
@@ -198,6 +224,15 @@ pub fn match_kexts(report: &HardwareReport, macos_darwin: u32) -> Vec<KextEntry>
         if is_intel_hedt(&report.cpu.name, c) {
             selected.push("CpuTscSync".into());
         }
+    }
+
+    // NVIDIA без нативной поддержки на целевой macOS — предлагаем драйвер nullmoth
+    let nvidia_unsupported = report.gpus.iter().any(|g| {
+        g.vendor_id == "10de"
+            && g.max_darwin.map_or(false, |m| m == 0 || m < macos_darwin)
+    });
+    if nvidia_unsupported {
+        selected.push("NVIDIA Driver".into());
     }
 
     let gpu_needs_oclp = report.gpus.iter().any(|g| {
@@ -315,6 +350,7 @@ pub fn match_kexts(report: &HardwareReport, macos_darwin: u32) -> Vec<KextEntry>
             status: String::new(),
             requires: k.requires.iter().map(|s| s.to_string()).collect(),
             repo: k.repo.map(str::to_string),
+            non_efi: k.non_efi,
         })
         .collect();
 

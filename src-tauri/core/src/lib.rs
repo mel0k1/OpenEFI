@@ -7,3 +7,4 @@ pub mod kexts;
 pub mod macos;
 pub mod smbios;
 pub mod ssdts;
+pub mod usbmap;

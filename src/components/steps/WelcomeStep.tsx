@@ -1,5 +1,6 @@
 import { Cpu, HardDriveDownload, Loader2, Sparkles } from "lucide-react";
 import appIcon from "@/assets/openefi-icon.png";
+import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -9,25 +10,24 @@ interface Props {
 }
 
 export function WelcomeStep({ scanning, onScan }: Props) {
+  const { t } = useI18n();
   return (
     <div className="flex flex-col items-center py-10">
       <img src={appIcon} alt="OpenEFI" className="mb-6 size-20" />
-      <h1 className="mb-2 text-2xl font-bold">Добро пожаловать в OpenEFI</h1>
+      <h1 className="mb-2 text-2xl font-bold">{t("welcome.title")}</h1>
       <p className="text-muted-foreground mb-8 max-w-lg text-center text-sm leading-relaxed">
-        Определите железо компьютера, получите подборку совместимых кекстов,
-        рекомендацию SMBIOS и сгенерируйте серийные номера для вашего хакинтоша.
-        Логика подбора основана на опыте OpCore-Simplify и RapidEFI.
+        {t("welcome.desc")}
       </p>
       <Button size="lg" onClick={onScan} disabled={scanning} className="gap-2">
         {scanning ? (
           <>
             <Loader2 className="size-4 animate-spin" />
-            Сканирую железо...
+            {t("welcome.scanning")}
           </>
         ) : (
           <>
             <HardDriveDownload className="size-4" />
-            Сканировать железо
+            {t("welcome.scan")}
           </>
         )}
       </Button>
@@ -36,18 +36,18 @@ export function WelcomeStep({ scanning, onScan }: Props) {
         {[
           {
             icon: Sparkles,
-            title: "Автоподбор кекстов",
-            text: "Lilu, VirtualSMC, WhateverGreen, AppleALC и сетевые драйверы — по вашим PCI ID",
+            title: t("welcome.f1.title"),
+            text: t("welcome.f1.text"),
           },
           {
             icon: Cpu,
-            title: "SMBIOS и серийники",
-            text: "Рекомендация модели Mac по CPU и платформе, генерация Serial, MLB, ROM и UUID",
+            title: t("welcome.f2.title"),
+            text: t("welcome.f2.text"),
           },
           {
             icon: HardDriveDownload,
-            title: "Совместимость macOS",
-            text: "Оценка максимальной версии macOS по GPU и поколению процессора",
+            title: t("welcome.f3.title"),
+            text: t("welcome.f3.text"),
           },
         ].map((f) => (
           <Card key={f.title}>

@@ -4,6 +4,8 @@ import appIcon from "@/assets/openefi-icon.png";
 import { invoke } from "@/types";
 import type { HardwareReport, KextEntry, MacosVersion, SmbiosData, SmbiosRecommendation, SsdtEntry } from "@/types";
 import { useTheme } from "@/hooks/useTheme";
+import { useI18n } from "@/i18n";
+import { LangProvider } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -15,9 +17,17 @@ import { SmbiosStep } from "@/components/steps/SmbiosStep";
 import { ConfigStep } from "@/components/steps/ConfigStep";
 import { ExportStep } from "@/components/steps/ExportStep";
 
-const STEPS = ["Начало", "Железо", "Кексты", "SMBIOS", "Конфиг", "Экспорт"];
+const STEP_KEYS = [
+  "app.step.welcome",
+  "app.step.hardware",
+  "app.step.kexts",
+  "app.step.smbios",
+  "app.step.config",
+  "app.step.export",
+];
 
-export default function App() {
+function AppInner() {
+  const { t } = useI18n();
   const { dark, toggle } = useTheme();
   const [step, setStep] = useState(0);
   const [scanning, setScanning] = useState(false);
@@ -94,8 +104,8 @@ export default function App() {
           <div className="text-sm font-semibold leading-tight">OpenEFI</div>
         </div>
         <div className="flex items-center gap-1">
-          {STEPS.map((label, i) => (
-            <div key={label} className="flex items-center">
+          {STEP_KEYS.map((key, i) => (
+            <div key={key} className="flex items-center">
               <button
                 onClick={() => i <= step && setStep(i)}
                 disabled={i > step}
@@ -105,17 +115,17 @@ export default function App() {
                     : "text-muted-foreground hover:bg-accent"
                 }`}
               >
-                {i + 1}. {label}
+                {i + 1}. {t(key)}
               </button>
-              {i < STEPS.length - 1 && <Separator orientation="vertical" className="mx-0.5 h-3.5" />}
+              {i < STEP_KEYS.length - 1 && <Separator orientation="vertical" className="mx-0.5 h-3.5" />}
             </div>
           ))}
           <SettingsDialog>
-            <Button variant="ghost" size="icon" title="Настройки">
+            <Button variant="ghost" size="icon" title={t("app.settings")}>
               <Settings className="size-4" />
             </Button>
           </SettingsDialog>
-          <Button variant="ghost" size="icon" onClick={toggle} title="Тема">
+          <Button variant="ghost" size="icon" onClick={toggle} title={t("app.theme")}>
             {dark ? "☀️" : "🌙"}
           </Button>
         </div>
@@ -169,18 +179,18 @@ export default function App() {
 
       <footer className="flex items-center justify-between border-t px-5 py-3">
         <Button variant="ghost" disabled={step === 0} onClick={() => setStep((s) => Math.max(0, s - 1))}>
-          Назад
+          {t("app.back")}
         </Button>
         <div className="text-muted-foreground text-xs">
           {report && (
             <span className="flex items-center gap-3">
               <span className="flex items-center gap-1">
                 <CpuIcon className="size-3.5" />
-                {report.cpu.name || "CPU"}
+                {report.cpu.name || t("hw.cpu")}
               </span>
               <span className="flex items-center gap-1">
                 <MemoryStick className="size-3.5" />
-                {report.memory_gb} ГБ
+                {report.memory_gb} {t("app.gb")}
               </span>
               <span className="flex items-center gap-1">
                 <MonitorSmartphone className="size-3.5" />
@@ -195,12 +205,20 @@ export default function App() {
         </div>
         {step < 5 ? (
           <Button disabled={!canNext} onClick={() => setStep((s) => Math.min(5, s + 1))}>
-            Далее
+            {t("app.next")}
           </Button>
         ) : (
-          <Badge variant="secondary">Готово</Badge>
+          <Badge variant="secondary">{t("app.done")}</Badge>
         )}
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <LangProvider>
+      <AppInner />
+    </LangProvider>
   );
 }

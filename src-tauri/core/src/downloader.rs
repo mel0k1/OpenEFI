@@ -6,7 +6,7 @@
 //! и распаковываем все `.kext`-бандлы из архива в `EFI/OC/Kexts`.
 
 use std::collections::HashSet;
-use std::io::{Read, Seek};
+use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -201,8 +201,17 @@ fn http_agent() -> ureq::Agent {
 
 fn fetch_latest_release(agent: &ureq::Agent, repo: &str) -> Result<Release, String> {
     let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    fetch_release_url(agent, &url, repo)
+}
+
+fn fetch_release_by_tag(agent: &ureq::Agent, repo: &str, tag: &str) -> Result<Release, String> {
+    let url = format!("https://api.github.com/repos/{repo}/releases/tags/{tag}");
+    fetch_release_url(agent, &url, repo)
+}
+
+fn fetch_release_url(agent: &ureq::Agent, url: &str, repo: &str) -> Result<Release, String> {
     let resp = agent
-        .get(&url)
+        .get(url)
         .call()
         .map_err(|e| match e {
             ureq::Error::Status(code, _) => match code {
@@ -214,6 +223,97 @@ fn fetch_latest_release(agent: &ureq::Agent, repo: &str) -> Result<Release, Stri
         })?;
     let text = resp.into_string().map_err(|e| format!("ответ GitHub не читается: {e}"))?;
     serde_json::from_str(&text).map_err(|e| format!("неожиданный ответ GitHub API: {e}"))
+}
+
+/// Скачивание файла потоком на диск (для крупных ассетов и утилит)
+pub fn download_to_file(agent: &ureq::Agent, url: &str, dest: &Path) -> Result<u64, String> {
+    let resp = agent
+        .get(url)
+        .call()
+        .map_err(|e| match e {
+            ureq::Error::Status(code, _) => format!("скачивание прервано: HTTP {code}"),
+            _ => "нет связи с сервером при скачивании".into(),
+        })?;
+    let mut reader = resp.into_reader().take(MAX_DOWNLOAD_BYTES + 1);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("не создать папку {}: {e}", parent.display()))?;
+    }
+    let mut out = std::fs::File::create(dest)
+        .map_err(|e| format!("не записать {}: {e}", dest.display()))?;
+    let mut written: u64 = 0;
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = reader
+            .read(&mut buf)
+            .map_err(|e| format!("ошибка чтения: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        written += n as u64;
+        if written > MAX_DOWNLOAD_BYTES {
+            drop(out);
+            let _ = std::fs::remove_file(dest);
+            return Err("файл слишком большой".into());
+        }
+        out.write_all(&buf[..n])
+            .map_err(|e| format!("ошибка записи {}: {e}", dest.display()))?;
+    }
+    Ok(written)
+}
+
+/// Утилита USBToolBox: репозиторий, тег (None — последний релиз), имя ассета
+pub fn utb_tool_asset(target: &str) -> Result<(&'static str, Option<&'static str>, &'static str), String> {
+    match target {
+        // macOS-сборка тулза не обновлялась с 0.1.1 (рекомендация самого USBToolBox)
+        "macos" => Ok(("USBToolBox/tool", Some("0.1.1"), "macOS.zip")),
+        "windows" => Ok(("USBToolBox/tool", None, "Windows.exe")),
+        other => Err(format!("неизвестная цель утилиты: {other}")),
+    }
+}
+
+/// Скачать утилиту USBToolBox по цели (windows|macos) в указанный файл
+pub fn download_utb_tool(target: &str, dest: &Path) -> Result<String, String> {
+    let (repo, tag, asset_name) = utb_tool_asset(target)?;
+    let agent = http_agent();
+    let release = match tag {
+        Some(t) => fetch_release_by_tag(&agent, repo, t)?,
+        None => fetch_latest_release(&agent, repo)?,
+    };
+    let asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == asset_name)
+        .ok_or_else(|| format!("в релизе {repo} нет ассета {asset_name}"))?;
+    download_to_file(&agent, &asset.browser_download_url, dest)?;
+    Ok(asset.name.clone())
+}
+
+/// Публичный ассет релиза (имя + ссылка) для диалогов сохранения
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct PickedAsset {
+    pub name: String,
+    pub browser_download_url: String,
+}
+
+/// Найти в последнем релизе репозитория ассет по расширению (например «.dmg»)
+pub fn pick_release_asset(repo: &str, ext: &str) -> Result<PickedAsset, String> {
+    let agent = http_agent();
+    let release = fetch_latest_release(&agent, repo)?;
+    let asset = release
+        .assets
+        .iter()
+        .find(|a| a.name.to_lowercase().ends_with(ext))
+        .ok_or_else(|| format!("в релизе {repo} нет ассета с расширением {ext}"))?;
+    Ok(PickedAsset {
+        name: asset.name.clone(),
+        browser_download_url: asset.browser_download_url.clone(),
+    })
+}
+
+/// Скачать файл по прямой ссылке на диск
+pub fn download_to_file_url(url: &str, dest: &Path) -> Result<(), String> {
+    let agent = http_agent();
+    download_to_file(&agent, url, dest).map(|_| ())
 }
 
 fn fetch_bytes(agent: &ureq::Agent, url: &str) -> Result<Vec<u8>, String> {
@@ -363,12 +463,18 @@ pub fn download_kexts(
     let mut repos: Vec<(String, Vec<String>)> = Vec::new(); // (repo, [kext names])
     for it in items {
         let Some(repo) = it.repo.clone().filter(|r| r.split('/').count() == 2) else {
+            // UTBMap ставится через помощник USB, системные драйверы — в macOS
+            let hint = match it.name.as_str() {
+                "UTBMap" => "маппинг добавляется через помощник USB на этом же шаге".to_string(),
+                n if n == "NVIDIA Driver" => "системный драйвер — устанавливается внутри macOS, не в EFI".to_string(),
+                _ => "репозиторий не указан — скачайте вручную с сайта разработчика".to_string(),
+            };
             results.push(KextDownloadResult {
                 name: it.name.clone(),
                 ok: false,
                 version: None,
                 installed: vec![],
-                message: Some("репозиторий не указан — скачайте вручную с сайта разработчика".into()),
+                message: Some(hint),
             });
             done += 1;
             progress(DownloadProgress { done, total, kext: it.name.clone() });
@@ -602,6 +708,17 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
         assert!(extract_kexts_from_zip(buf, &tmp).is_err());
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_utb_tool_asset_mapping() {
+        let (repo_w, tag_w, asset_w) = utb_tool_asset("windows").unwrap();
+        assert_eq!((repo_w, asset_w), ("USBToolBox/tool", "Windows.exe"));
+        assert!(tag_w.is_none());
+        let (repo_m, tag_m, asset_m) = utb_tool_asset("macos").unwrap();
+        assert_eq!((repo_m, asset_m), ("USBToolBox/tool", "macOS.zip"));
+        assert_eq!(tag_m, Some("0.1.1"));
+        assert!(utb_tool_asset("linux").is_err());
     }
 
     #[test]

@@ -144,11 +144,19 @@ pub fn generate_config(input: &ConfigInput) -> Result<Vec<u8>, String> {
     }
 
     // --- Kernel / Add ---
+    // Системные драйверы (non_efi) в EFI не попадают — исключаем из Kernel/Add
+    let efi_kexts: Vec<kexts::KextEntry> = input
+        .kexts
+        .iter()
+        .filter(|k| k.selected && !k.non_efi)
+        .cloned()
+        .collect();
     let mut kernel_add = Vec::new();
-    for (name, min, max) in ordered_kexts(input.kexts) {
+    for (name, min, max) in ordered_kexts(&efi_kexts) {
         let mut d = Dictionary::new();
         d.insert("Arch".into(), Value::String("x86_64".into()));
-        d.insert("BundlePath".into(), Value::String(format!("{name}.kext")));
+        // Кексты лежат в EFI/OC/Kexts, путь в BundlePath задаётся от папки OC
+        d.insert("BundlePath".into(), Value::String(format!("Kexts/{name}.kext")));
         d.insert("Comment".into(), Value::String(String::new()));
         d.insert("Enabled".into(), Value::Boolean(true));
         d.insert(
@@ -322,9 +330,9 @@ mod tests {
             .filter_map(|d| d.get("BundlePath").and_then(|b| b.as_string()))
             .collect();
         assert!(!bundles.is_empty());
-        assert_eq!(bundles[0], "Lilu.kext", "Lilu должен быть первым: {bundles:?}");
-        let vs = bundles.iter().position(|b| *b == "VirtualSMC.kext").unwrap();
-        let sp = bundles.iter().position(|b| *b == "SMCProcessor.kext").unwrap();
+        assert_eq!(bundles[0], "Kexts/Lilu.kext", "Lilu должен быть первым: {bundles:?}");
+        let vs = bundles.iter().position(|b| *b == "Kexts/VirtualSMC.kext").unwrap();
+        let sp = bundles.iter().position(|b| *b == "Kexts/SMCProcessor.kext").unwrap();
         assert!(vs < sp, "VirtualSMC раньше плагинов");
 
         // DeviceProperties: ig-platform-id 0x3E9B0007
@@ -397,5 +405,40 @@ mod tests {
             .filter_map(|d| d.get("Path").and_then(|p| p.as_string()))
             .collect();
         assert!(!paths.iter().any(|p| p.contains("PLUG")));
+    }
+
+    #[test]
+    fn test_non_efi_kext_excluded_from_config() {
+        let report = sample_report();
+        let mut all = kexts::match_kexts(&report, 22);
+        // помечаем NVIDIA Driver выбранным (системный драйвер)
+        for k in &mut all {
+            if k.non_efi {
+                k.selected = true;
+            }
+        }
+        assert!(all.iter().any(|k| k.non_efi && k.selected), "в каталоге должен быть non-EFI драйвер");
+        let ssdts_sel = ssdts::recommend(&report);
+        let smbios = crate::smbios::generate("iMac19,1");
+        let input = ConfigInput {
+            report: &report,
+            kexts: &all,
+            ssdts: &ssdts_sel,
+            smbios: &smbios,
+            darwin: 22,
+        };
+        let bytes = generate_config(&input).unwrap();
+        let root = parse_xml(&bytes);
+        let bundles: Vec<&str> = path(&root, &["Kernel", "Add"])
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.as_dictionary())
+            .filter_map(|d| d.get("BundlePath").and_then(|b| b.as_string()))
+            .collect();
+        assert!(
+            !bundles.iter().any(|b| b.contains("NVIDIA Driver")),
+            "системный драйвер не должен попадать в Kernel/Add: {bundles:?}"
+        );
     }
 }

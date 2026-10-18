@@ -8,6 +8,7 @@ import {
 import { listen } from "@tauri-apps/api/event";
 import type { KextDlProgress, KextEntry, KextsToEfiReport } from "@/types";
 import { invoke } from "@/types";
+import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -19,6 +20,7 @@ interface Props {
 type Phase = "idle" | "running" | "done";
 
 export function EfiInstallCard({ kexts, darwin }: Props) {
+  const { t, tb } = useI18n();
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<KextDlProgress | null>(null);
   const [report, setReport] = useState<KextsToEfiReport | null>(null);
@@ -31,16 +33,18 @@ export function EfiInstallCard({ kexts, darwin }: Props) {
     };
   }, []);
 
-  const selected = kexts.filter((k) => k.selected);
+  // в EFI скачиваются только EFI-кексты; UTBMap — через помощник USB, драйверы — в macOS
+  const installable = kexts.filter((k) => k.selected && !k.non_efi && k.name !== "UTBMap");
+  const excluded = kexts.filter((k) => k.selected && (k.non_efi || k.name === "UTBMap"));
 
   const install = async () => {
     setPhase("running");
     setReport(null);
     setError(null);
-    setProgress({ done: 0, total: selected.length, kext: selected[0]?.name ?? "" });
+    setProgress({ done: 0, total: installable.length, kext: installable[0]?.name ?? "" });
     try {
       const r = await invoke<KextsToEfiReport>("download_kexts_to_efi", {
-        kexts: selected.map((k) => ({ name: k.name, repo: k.repo })),
+        kexts: installable.map((k) => ({ name: k.name, repo: k.repo })),
         darwin,
       });
       setReport(r);
@@ -62,28 +66,31 @@ export function EfiInstallCard({ kexts, darwin }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Установка в EFI-папку</CardTitle>
-        <CardDescription className="text-xs">
-          Скачаем последние релизы кекстов с GitHub и распакуем .kext прямо в
-          EFI/OC/Kexts выбранной папки — вручную ничего копировать не нужно.
-        </CardDescription>
+        <CardTitle className="text-sm">{t("efi.title")}</CardTitle>
+        <CardDescription className="text-xs">{t("efi.desc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={install} disabled={phase === "running" || selected.length === 0} className="gap-2">
+          <Button onClick={install} disabled={phase === "running" || installable.length === 0} className="gap-2">
             {phase === "running" ? <Loader2 className="size-4 animate-spin" /> : <FolderDown className="size-4" />}
-            {phase === "running" ? "Скачиваю…" : "Выбрать EFI-папку и скачать"}
+            {phase === "running" ? t("efi.downloading") : t("efi.download")}
           </Button>
-          {selected.length === 0 && (
-            <span className="text-muted-foreground text-xs">Сначала отметьте хотя бы один кекст</span>
+          {installable.length === 0 && (
+            <span className="text-muted-foreground text-xs">{t("efi.selectFirst")}</span>
           )}
         </div>
+
+        {excluded.length > 0 && (
+          <div className="text-muted-foreground text-xs">
+            {t("efi.excluded", { names: excluded.map((k) => k.name).join(", ") })}
+          </div>
+        )}
 
         {phase === "running" && progress && (
           <div className="space-y-1.5">
             <div className="text-muted-foreground flex items-center gap-2 text-xs">
               <Loader2 className="size-3.5 animate-spin" />
-              {progress.kext} — {progress.done} из {progress.total}
+              {progress.kext} — {t("efi.progress", { done: progress.done, total: progress.total })}
             </div>
             <div className="bg-muted h-1.5 overflow-hidden rounded-full">
               <div className="bg-primary h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
@@ -97,22 +104,22 @@ export function EfiInstallCard({ kexts, darwin }: Props) {
               <PackageCheck className="mt-0.5 size-4 shrink-0" />
               <div className="text-xs leading-relaxed">
                 <div className="font-medium">
-                  Готово: {okCount} из {report.results.length} кекстов установлено
+                  {t("efi.done", { ok: okCount, total: report.results.length })}
                 </div>
-                <div className="text-muted-foreground break-all">{report.kexts_dir}</div>
+                <div className="text-muted-foreground break-all">{tb(report.kexts_dir)}</div>
               </div>
             </div>
             {failed.length > 0 && (
               <div className="space-y-1 rounded-md bg-destructive/10 p-3 text-destructive">
                 <div className="flex items-center gap-2 text-xs font-medium">
                   <AlertCircle className="size-3.5" />
-                  Не удалось скачать ({failed.length}):
+                  {t("efi.failed", { n: failed.length })}
                 </div>
                 <ul className="space-y-0.5 text-xs leading-relaxed">
                   {failed.map((f) => (
                     <li key={f.name}>
                       <span className="font-medium">{f.name}</span>
-                      {f.message ? ` — ${f.message}` : ""}
+                      {f.message ? ` — ${tb(f.message)}` : ""}
                     </li>
                   ))}
                 </ul>
@@ -124,7 +131,7 @@ export function EfiInstallCard({ kexts, darwin }: Props) {
         {error && (
           <div className="flex items-start gap-2 rounded-md bg-destructive/10 p-3 text-destructive">
             <AlertCircle className="mt-0.5 size-4 shrink-0" />
-            <div className="text-xs leading-relaxed">{error}</div>
+            <div className="text-xs leading-relaxed">{tb(error)}</div>
           </div>
         )}
       </CardContent>

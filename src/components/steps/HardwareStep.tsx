@@ -1,5 +1,6 @@
 import { AlertTriangle, Bluetooth, Cpu, MemoryStick, MonitorSmartphone, Network, Speaker, TriangleAlert } from "lucide-react";
 import type { HardwareReport, MacosVersion } from "@/types";
+import { useI18n } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props) {
+  const { t, tb } = useI18n();
   const gpuCount = report.gpus.length || 0;
 
   return (
@@ -23,7 +25,7 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
               <Cpu className="size-5" />
             </div>
             <div className="min-w-0">
-              <CardTitle className="truncate text-sm">{report.cpu.name || "Процессор"}</CardTitle>
+              <CardTitle className="truncate text-sm">{report.cpu.name || t("hw.cpu")}</CardTitle>
               <CardDescription className="text-xs">
                 {report.cpu.manufacturer}
                 {report.cpu.codename ? ` · ${report.cpu.codename}` : ""}
@@ -33,14 +35,14 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
           <CardContent>
             <div className="flex flex-wrap gap-1.5">
               <Badge variant="secondary">
-                {report.cpu.cores} ядер / {report.cpu.threads} потоков
+                {t("hw.coresThreads", { cores: report.cpu.cores, threads: report.cpu.threads })}
               </Badge>
               <Badge variant={report.cpu.avx2 ? "secondary" : "warning"}>
-                {report.cpu.avx2 ? "AVX2" : "без AVX2"}
+                {report.cpu.avx2 ? "AVX2" : t("hw.noAvx2")}
               </Badge>
               <Badge variant="secondary">
                 <MemoryStick className="size-3" />
-                {report.memory_gb} ГБ
+                {report.memory_gb} {t("app.gb")}
               </Badge>
               <Badge variant="outline">{report.platform}</Badge>
             </div>
@@ -54,26 +56,35 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
             </div>
             <div className="min-w-0">
               <CardTitle className="text-sm">
-                Видеокарты{gpuCount > 0 ? ` · ${gpuCount}` : ""}
+                {t("hw.gpus")}
+                {gpuCount > 0 ? ` · ${gpuCount}` : ""}
               </CardTitle>
-              <CardDescription className="text-xs">GPU и ускорители</CardDescription>
+              <CardDescription className="text-xs">{t("hw.gpusSubtitle")}</CardDescription>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
             {report.gpus.length === 0 && (
-              <div className="text-muted-foreground text-xs">Видеокарты не определены</div>
+              <div className="text-muted-foreground text-xs">{t("hw.gpusEmpty")}</div>
             )}
             {report.gpus.map((g, i) => (
               <div key={i} className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="truncate text-xs font-medium">{g.name}</div>
                   <div className="text-muted-foreground text-[11px]">
-                    {g.device_type} · {g.vendor_id}:{g.device_id}
+                    {tb(g.device_type)} · {g.vendor_id}:{g.device_id}
                   </div>
                 </div>
                 {g.note && (
-                  <Badge variant={g.max_darwin === 0 ? "destructive" : "outline"} className="shrink-0">
-                    {g.max_darwin === 0 ? "не поддерживается" : g.max_darwin ? `≤ Darwin ${g.max_darwin}` : "OK"}
+                  <Badge
+                    variant={g.max_darwin === 0 ? "destructive" : "outline"}
+                    className="shrink-0"
+                    title={tb(g.note)}
+                  >
+                    {g.max_darwin === 0
+                      ? t("hw.unsupported")
+                      : g.max_darwin
+                        ? `≤ Darwin ${g.max_darwin}`
+                        : "OK"}
                   </Badge>
                 )}
               </div>
@@ -84,17 +95,17 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <DeviceCard
-          title="Сеть"
+          title={t("hw.network")}
           icon={<Network className="size-5" />}
           devices={report.network}
         />
         <DeviceCard
-          title="Аудио"
+          title={t("hw.audio")}
           icon={<Speaker className="size-5" />}
           devices={report.audio}
         />
         <DeviceCard
-          title="Bluetooth"
+          title={t("hw.bluetooth")}
           icon={<Bluetooth className="size-5" />}
           devices={report.bluetooth}
         />
@@ -105,7 +116,7 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
           {report.warnings.map((w, i) => (
             <div key={i} className="flex items-center gap-2 text-xs">
               <AlertTriangle className="size-3.5 shrink-0" />
-              {w}
+              {tb(w)}
             </div>
           ))}
         </div>
@@ -113,10 +124,8 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Целевая версия macOS</CardTitle>
-          <CardDescription className="text-xs">
-            Серым отмечены версии выше лимита вашего железа — их установка потребует OCLP
-          </CardDescription>
+          <CardTitle className="text-sm">{t("hw.targetMacos")}</CardTitle>
+          <CardDescription className="text-xs">{t("hw.targetHint")}</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-2">
@@ -152,18 +161,19 @@ function DeviceCard({
   icon: React.ReactNode;
   devices: HardwareReport["network"];
 }) {
+  const { t } = useI18n();
   return (
     <Card>
       <CardHeader className="flex-row items-center gap-3 space-y-0">
         <div className="flex size-10 items-center justify-center rounded-lg bg-muted">{icon}</div>
         <div>
           <CardTitle className="text-sm">{title}</CardTitle>
-          <CardDescription className="text-xs">{devices.length} устр.</CardDescription>
+          <CardDescription className="text-xs">{t("hw.devices", { n: devices.length })}</CardDescription>
         </div>
       </CardHeader>
       <CardContent className="space-y-1.5">
         {devices.length === 0 && (
-          <div className="text-muted-foreground text-xs">Не обнаружено</div>
+          <div className="text-muted-foreground text-xs">{t("hw.none")}</div>
         )}
         {devices.map((d, i) => (
           <div key={i}>

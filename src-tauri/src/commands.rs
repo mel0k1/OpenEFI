@@ -183,3 +183,98 @@ pub fn download_kexts_to_efi(
         let _ = app.emit("kext-dl-progress", pr);
     })
 }
+
+/// Скачать утилиту USBToolBox (windows|macos) через диалог сохранения
+#[tauri::command]
+pub fn download_utb_tool(window: tauri::WebviewWindow, target: String) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let default_name = match target.as_str() {
+        "windows" => "USBToolBox-Windows.exe",
+        "macos" => "USBToolBox-macOS.zip",
+        other => return Err(format!("неизвестная цель утилиты: {other}")),
+    };
+    let picked = DialogExt::dialog(&window)
+        .file()
+        .set_file_name(default_name)
+        .blocking_save_file();
+
+    let Some(picked) = picked else {
+        return Err("Сохранение отменено".into());
+    };
+    let dest = picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь")?;
+
+    openefi_core::downloader::download_utb_tool(&target, &dest)?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// Установить сгенерированный UTBMap.kext в EFI: выбор папки с кекстом,
+/// выбор EFI-папки, копирование в OC/Kexts и правка config.plist
+#[tauri::command]
+pub fn install_utbmap_to_efi(
+    window: tauri::WebviewWindow,
+) -> Result<openefi_core::usbmap::UtbMapReport, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked_kext = DialogExt::dialog(&window)
+        .file()
+        .set_title("Выберите папку UTBMap.kext или папку вывода USBToolBox")
+        .blocking_pick_folder();
+    let Some(picked_kext) = picked_kext else {
+        return Err("Выбор папки отменён".into());
+    };
+    let kext_path = picked_kext
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь к кексту")?;
+
+    let picked_efi = DialogExt::dialog(&window)
+        .file()
+        .set_title("Выберите EFI-папку или диск с EFI")
+        .blocking_pick_folder();
+    let Some(picked_efi) = picked_efi else {
+        return Err("Выбор папки отменён".into());
+    };
+    let efi_path = picked_efi
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь к папке")?;
+
+    openefi_core::usbmap::install_utbmap(&kext_path, &efi_path)
+}
+
+/// Скачать файл из последнего релиза репозитория по расширению (для системных драйверов)
+#[tauri::command]
+pub fn download_driver_file(
+    window: tauri::WebviewWindow,
+    repo: String,
+    ext: String,
+) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    if repo.matches('/').count() != 1 {
+        return Err("некорректный репозиторий".into());
+    }
+    let ext_norm = ext.to_lowercase();
+    // сначала узнаём имя ассета — чтобы предложить вменяемое имя файла
+    let asset = openefi_core::downloader::pick_release_asset(&repo, &ext_norm)?;
+
+    let picked = DialogExt::dialog(&window)
+        .file()
+        .set_file_name(&asset.name)
+        .blocking_save_file();
+
+    let Some(picked) = picked else {
+        return Err("Сохранение отменено".into());
+    };
+    let dest = picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь")?;
+
+    openefi_core::downloader::download_to_file_url(&asset.browser_download_url, &dest)?;
+    Ok(dest.to_string_lossy().to_string())
+}
