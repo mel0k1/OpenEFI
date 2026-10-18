@@ -210,6 +210,7 @@ mod tests {
             network: vec![],
             audio: vec![],
             bluetooth: vec![],
+            storage: vec![],
             warnings: vec![],
         }
     }

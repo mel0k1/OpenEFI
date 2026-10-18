@@ -39,6 +39,10 @@ export const ru: Record<string, string> = {
   "hw.network": "Сеть",
   "hw.audio": "Аудио",
   "hw.bluetooth": "Bluetooth",
+  "hw.storage": "Накопители",
+  "hw.storageSubtitle": "NVMe, SATA и USB-диски",
+  "hw.storageEmpty": "Диски не определены",
+  "hw.nvmeBad": "проблемный NVMe",
   "hw.devices": "{n} устр.",
   "hw.none": "Не обнаружено",
   "hw.targetMacos": "Целевая версия macOS",
@@ -89,6 +93,11 @@ export const ru: Record<string, string> = {
   "usb.configMissing":
     "config.plist в EFI/OC не найден — кекст скопирован. После генерации конфига отметьте UTBMap в списке кекстов, и он попадёт в Kernel/Add.",
   "usb.deleteHint": "После проверки загрузки удалите UTBDefault.kext из папки Kexts",
+  "usb.toolboxMissing":
+    "USBToolBox.kext не найден в EFI/OC/Kexts — UTBMap не загрузится без него. Установите его кнопкой в шаге кекстов (или положите рядом с UTBMap.kext) и повторите.",
+  "usb.toolboxRegistered": "USBToolBox.kext подключён в Kernel/Add перед UTBMap",
+  "usb.xhciOff": "XhciPortLimit выключен — лимит портов больше не нужен",
+  "usb.xhciStillOn": "XhciPortLimit не отключён — config.plist не найден. Выключите его вручную после генерации конфига",
 
   "smbios.recommendation": "Рекомендация: {model}",
   "smbios.modelTitle": "Модель SMBIOS",
@@ -422,6 +431,10 @@ export const en: Record<string, string> = {
   "hw.network": "Network",
   "hw.audio": "Audio",
   "hw.bluetooth": "Bluetooth",
+  "hw.storage": "Storage",
+  "hw.storageSubtitle": "NVMe, SATA and USB drives",
+  "hw.storageEmpty": "No drives detected",
+  "hw.nvmeBad": "problematic NVMe",
   "hw.devices": "{n} dev.",
   "hw.none": "Not detected",
   "hw.targetMacos": "Target macOS version",
@@ -472,6 +485,11 @@ export const en: Record<string, string> = {
   "usb.configMissing":
     "config.plist not found in EFI/OC — the kext was copied. After generating the config, check UTBMap in the kext list and it will be added to Kernel/Add.",
   "usb.deleteHint": "After a successful boot test, delete UTBDefault.kext from the Kexts folder",
+  "usb.toolboxMissing":
+    "USBToolBox.kext was not found in EFI/OC/Kexts — UTBMap won't load without it. Install it with the button in the kexts step (or place it next to UTBMap.kext) and try again.",
+  "usb.toolboxRegistered": "USBToolBox.kext registered in Kernel/Add before UTBMap",
+  "usb.xhciOff": "XhciPortLimit disabled — the port limit is no longer needed",
+  "usb.xhciStillOn": "XhciPortLimit was not disabled — config.plist not found. Disable it manually after generating the config",
 
   "smbios.recommendation": "Recommendation: {model}",
   "smbios.modelTitle": "SMBIOS model",

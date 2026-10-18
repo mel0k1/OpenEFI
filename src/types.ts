@@ -25,6 +25,14 @@ export interface DeviceInfo {
   note: string | null;
 }
 
+export interface StorageInfo {
+  name: string;
+  /** "NVMe" | "SATA" | "eMMC" | "USB" | "Unknown" */
+  kind: string;
+  size_gb: number | null;
+  note: string | null;
+}
+
 export interface HardwareReport {
   os: string;
   platform: string;
@@ -35,6 +43,7 @@ export interface HardwareReport {
   network: DeviceInfo[];
   audio: DeviceInfo[];
   bluetooth: DeviceInfo[];
+  storage: StorageInfo[];
   warnings: string[];
 }
 
@@ -145,6 +154,9 @@ export interface UtbMapReport {
   backup_made: boolean;
   utbmap_registered: boolean;
   utbdefault_disabled: boolean;
+  toolbox_present: boolean;
+  toolbox_registered: boolean;
+  xhciportlimit_disabled: boolean;
 }
 
 // --- Компенсации BIOS (кварки) ---

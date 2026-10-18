@@ -1,5 +1,5 @@
-import { AlertTriangle, Bluetooth, Cpu, MemoryStick, MonitorSmartphone, Network, Speaker, TriangleAlert } from "lucide-react";
-import type { HardwareReport, MacosVersion } from "@/types";
+import { AlertTriangle, Bluetooth, Cpu, HardDrive, MemoryStick, MonitorSmartphone, Network, Speaker, TriangleAlert } from "lucide-react";
+import type { HardwareReport, MacosVersion, StorageInfo } from "@/types";
 import { useI18n } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -111,6 +111,8 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
         />
       </div>
 
+      <StorageCard drives={report.storage} />
+
       {report.warnings.length > 0 && (
         <div className="rounded-lg border border-[var(--warning)]/40 bg-[var(--warning)]/10 px-4 py-3">
           {report.warnings.map((w, i) => (
@@ -149,6 +151,50 @@ export function HardwareStep({ report, versions, darwin, onDarwinChange }: Props
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function StorageCard({ drives }: { drives: StorageInfo[] }) {
+  const { t, tb } = useI18n();
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center gap-3 space-y-0">
+        <div className="flex size-10 items-center justify-center rounded-lg bg-muted">
+          <HardDrive className="size-5" />
+        </div>
+        <div>
+          <CardTitle className="text-sm">{t("hw.storage")}</CardTitle>
+          <CardDescription className="text-xs">{t("hw.storageSubtitle")}</CardDescription>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {drives.length === 0 && (
+          <div className="text-muted-foreground text-xs">{t("hw.storageEmpty")}</div>
+        )}
+        {drives.map((d, i) => (
+          <div key={i}>
+            <div className="flex items-center gap-1.5">
+              {d.note && <TriangleAlert className="size-3 shrink-0 text-[var(--warning)]" />}
+              <div className="truncate text-xs font-medium">{d.name}</div>
+              {d.size_gb != null && (
+                <Badge variant="secondary" className="ml-auto shrink-0 text-[10px]">
+                  {d.size_gb} {t("app.gb")}
+                </Badge>
+              )}
+            </div>
+            <div
+              className={cn(
+                "truncate text-[11px]",
+                d.note ? "text-[var(--warning)]" : "text-muted-foreground",
+              )}
+              title={d.note ? tb(d.note) : undefined}
+            >
+              {d.note ? `${d.kind} · ${tb(d.note)}` : d.kind}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

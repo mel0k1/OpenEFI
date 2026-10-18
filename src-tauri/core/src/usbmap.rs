@@ -23,24 +23,23 @@ pub struct UtbMapReport {
     pub utbmap_registered: bool,
     /// Отключён ли UTBDefault в конфиге (Enabled=false)
     pub utbdefault_disabled: bool,
+    /// USBToolBox.kext лежит в OC/Kexts после установки
+    pub toolbox_present: bool,
+    /// USBToolBox.kext зарегистрирован в Kernel/Add (включён)
+    pub toolbox_registered: bool,
+    /// XhciPortLimit выключен (маппинг установлен — лимит больше не нужен)
+    pub xhciportlimit_disabled: bool,
 }
 
 /// Найти UTBMap.kext: допускаем сам бандл или папку, где он лежит
 fn locate_utbmap(selected: &Path) -> Result<PathBuf, String> {
-    let looks_like_kext = |p: &Path| {
-        p.is_dir()
-            && p.file_name()
-                .map(|n| n.to_string_lossy().to_lowercase().ends_with(".kext"))
-                .unwrap_or(false)
-            && p.join("Contents").is_dir()
-    };
-    if looks_like_kext(selected) {
+    if is_kext_bundle(selected) {
         return Ok(selected.to_path_buf());
     }
     // возможно, выбрали папку вывода утилиты — ищем UTBMap.kext внутри
     for name in ["UTBMap.kext", "utbmap.kext"] {
         let cand = selected.join(name);
-        if looks_like_kext(&cand) {
+        if is_kext_bundle(&cand) {
             return Ok(cand);
         }
     }
@@ -68,21 +67,26 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
 }
 
 /// Запись кекта в Kernel → Add
-fn kext_add_entry(bundle_path: &str, comment: &str) -> Value {
+fn kext_add_entry(bundle_path: &str, comment: &str, executable: &str) -> Value {
     let mut d = Dictionary::new();
     d.insert("Arch".into(), Value::String("Any".into()));
     d.insert("BundlePath".into(), Value::String(bundle_path.into()));
     d.insert("Comment".into(), Value::String(comment.into()));
     d.insert("Enabled".into(), Value::Boolean(true));
-    d.insert("ExecutablePath".into(), Value::String("Contents/MacOS/UTBMap".into()));
+    d.insert("ExecutablePath".into(), Value::String(executable.into()));
     d.insert("MaxKernel".into(), Value::String(String::new()));
     d.insert("MinKernel".into(), Value::String(String::new()));
     d.insert("PlistPath".into(), Value::String("Contents/Info.plist".into()));
     Value::Dictionary(d)
 }
 
-/// Правка config.plist: включить/добавить UTBMap, отключить UTBDefault
-fn patch_config(config: &Path) -> Result<(bool, bool), String> {
+fn bundle_path_of(d: &Dictionary) -> Option<String> {
+    d.get("BundlePath").and_then(|b| b.as_string()).map(str::to_string)
+}
+
+/// Правка config.plist: включить/добавить UTBMap, отключить UTBDefault,
+/// гарантировать USBToolBox.kext перед ним, выключить XhciPortLimit.
+fn patch_config(config: &Path, toolbox_on_disk: bool) -> Result<(bool, bool, bool, bool), String> {
     let mut root = Value::from_reader(std::io::BufReader::new(
         std::fs::File::open(config).map_err(|e| format!("не открыть {}: {e}", config.display()))?,
     ))
@@ -106,13 +110,12 @@ fn patch_config(config: &Path) -> Result<(bool, bool), String> {
 
     let mut utbmap_registered = false;
     let mut utbdefault_disabled = false;
+    let mut toolbox_registered = false;
 
     // уже есть запись UTBMap? — включаем
     for e in entries.iter_mut() {
         let Some(d) = e.as_dictionary_mut() else { continue };
-        let is_utbmap = d
-            .get("BundlePath")
-            .and_then(|b| b.as_string())
+        let is_utbmap = bundle_path_of(d)
             .map(|b| b.to_lowercase().ends_with("utbmap.kext"))
             .unwrap_or(false);
         if is_utbmap {
@@ -121,17 +124,52 @@ fn patch_config(config: &Path) -> Result<(bool, bool), String> {
             break;
         }
     }
+
+    // уже есть запись USBToolBox? — включаем (UTBMap не загрузится без компаньона)
+    for e in entries.iter_mut() {
+        let Some(d) = e.as_dictionary_mut() else { continue };
+        let is_toolbox = bundle_path_of(d)
+            .map(|b| b.to_lowercase().ends_with("usbtoolbox.kext"))
+            .unwrap_or(false);
+        if is_toolbox {
+            d.insert("Enabled".into(), Value::Boolean(true));
+            toolbox_registered = true;
+            break;
+        }
+    }
+
     if !utbmap_registered {
-        entries.push(kext_add_entry("Kexts/UTBMap.kext", "USB map by USBToolBox"));
+        entries.push(kext_add_entry(
+            "Kexts/UTBMap.kext",
+            "USB map by USBToolBox",
+            "Contents/MacOS/UTBMap",
+        ));
         utbmap_registered = true;
+    }
+    // USBToolBox должен стоять в Kernel/Add до UTBMap
+    if !toolbox_registered && toolbox_on_disk {
+        let tb_entry = kext_add_entry(
+            "Kexts/USBToolBox.kext",
+            "USBToolBox companion kext",
+            "Contents/MacOS/USBToolBox",
+        );
+        let utbmap_pos = entries
+            .iter()
+            .position(|e| {
+                e.as_dictionary()
+                    .and_then(bundle_path_of)
+                    .map(|b| b.to_lowercase().ends_with("utbmap.kext"))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(entries.len());
+        entries.insert(utbmap_pos, tb_entry);
+        toolbox_registered = true;
     }
 
     // по документации USBToolBox UTBDefault заменяется маппингом — отключаем
     for e in entries.iter_mut() {
         let Some(d) = e.as_dictionary_mut() else { continue };
-        let is_default = d
-            .get("BundlePath")
-            .and_then(|b| b.as_string())
+        let is_default = bundle_path_of(d)
             .map(|b| b.to_lowercase().ends_with("utbdefault.kext"))
             .unwrap_or(false);
         if is_default {
@@ -139,6 +177,18 @@ fn patch_config(config: &Path) -> Result<(bool, bool), String> {
             utbdefault_disabled = true;
         }
     }
+
+    // маппинг установлен — лимит портов больше не нужен (и вреден)
+    if !kernel.contains_key("Quirks") {
+        kernel.insert("Quirks".into(), Value::Dictionary(Dictionary::new()));
+    }
+    let xhciportlimit_disabled = match kernel.get_mut("Quirks") {
+        Some(Value::Dictionary(q)) => {
+            q.insert("XhciPortLimit".into(), Value::Boolean(false));
+            true
+        }
+        _ => false,
+    };
 
     // резервная копия до записи
     let backup = config.with_extension("plist.bak-openefi");
@@ -149,7 +199,7 @@ fn patch_config(config: &Path) -> Result<(bool, bool), String> {
         .to_writer_xml(&mut buf)
         .map_err(|e| format!("не сериализовать {}: {e}", config.display()))?;
     std::fs::write(config, buf).map_err(|e| format!("не записать {}: {e}", config.display()))?;
-    Ok((utbmap_registered, utbdefault_disabled))
+    Ok((utbmap_registered, utbdefault_disabled, toolbox_registered, xhciportlimit_disabled))
 }
 
 /// Полный сценарий: найти UTBMap.kext → скопировать в EFI/OC/Kexts → править конфиг
@@ -166,13 +216,34 @@ pub fn install_utbmap(kext_selected: &Path, efi_selected: &Path) -> Result<UtbMa
         .unwrap_or_else(|| "UTBMap.kext".into());
     copy_dir_recursive(&src, &kexts_dir.join(&bundle_name))?;
 
+    // Компаньон USBToolBox.kext: без него UTBMap не загрузится.
+    // 1) уже в OC/Kexts? 2) рядом с UTBMap (вывод утилиты)? — тогда копируем
+    let toolbox_in_kexts = is_kext_bundle(&kexts_dir.join("USBToolBox.kext"));
+    if !toolbox_in_kexts {
+        if let Some(parent) = src.parent() {
+            let sibling = parent.join("USBToolBox.kext");
+            if is_kext_bundle(&sibling) {
+                copy_dir_recursive(&sibling, &kexts_dir.join("USBToolBox.kext"))?;
+            }
+        }
+    }
+    let toolbox_present = is_kext_bundle(&kexts_dir.join("USBToolBox.kext"));
+
     let config = efi_base.join("OC").join("config.plist");
-    let (config_path, backup_made, utbmap_registered, utbdefault_disabled) = if config.is_file() {
-        let (reg, dis) = patch_config(&config)?;
-        (Some(config.to_string_lossy().to_string()), true, reg, dis)
-    } else {
-        (None, false, false, false)
-    };
+    let (config_path, backup_made, utbmap_registered, utbdefault_disabled, toolbox_registered, xhciportlimit_disabled) =
+        if config.is_file() {
+            let (reg, dis, tb, xpl) = patch_config(&config, toolbox_present)?;
+            (
+                Some(config.to_string_lossy().to_string()),
+                true,
+                reg,
+                dis,
+                tb,
+                xpl,
+            )
+        } else {
+            (None, false, false, false, false, false)
+        };
 
     Ok(UtbMapReport {
         kexts_dir: kexts_dir.to_string_lossy().to_string(),
@@ -180,7 +251,19 @@ pub fn install_utbmap(kext_selected: &Path, efi_selected: &Path) -> Result<UtbMa
         backup_made,
         utbmap_registered,
         utbdefault_disabled,
+        toolbox_present,
+        toolbox_registered,
+        xhciportlimit_disabled,
     })
+}
+
+/// Проверка, что путь — валидный .kext-бандл (есть Contents)
+fn is_kext_bundle(p: &Path) -> bool {
+    p.is_dir()
+        && p.file_name()
+            .map(|n| n.to_string_lossy().to_lowercase().ends_with(".kext"))
+            .unwrap_or(false)
+        && p.join("Contents").is_dir()
 }
 
 #[cfg(test)]
@@ -224,6 +307,36 @@ mod tests {
         <key>PlistPath</key><string>Contents/Info.plist</string>
       </dict>
     </array>
+    <key>Quirks</key>
+    <dict>
+      <key>XhciPortLimit</key>
+      <true/>
+    </dict>
+  </dict>
+</dict>
+</plist>"#
+            .into()
+    }
+
+    // конфиг без USBToolBox в Kernel/Add, только UTBDefault
+    fn config_without_toolbox() -> String {
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>Kernel</key>
+  <dict>
+    <key>Add</key>
+    <array>
+      <dict>
+        <key>Arch</key><string>Any</string>
+        <key>BundlePath</key><string>Kexts/UTBDefault.kext</string>
+        <key>Enabled</key><true/>
+        <key>ExecutablePath</key><string>Contents/MacOS/UTBDefault</string>
+        <key>MaxKernel</key><string></string>
+        <key>MinKernel</key><string></string>
+        <key>PlistPath</key><string>Contents/Info.plist</string>
+      </dict>
+    </array>
   </dict>
 </dict>
 </plist>"#
@@ -253,11 +366,12 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("openefi-utbmap-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
 
-        // «вывод утилиты»: папка с готовым UTBMap.kext
+        // «вывод утилиты»: папка с готовыми UTBMap.kext и USBToolBox.kext
         let tool_out = tmp.join("tool-output");
         write_minimal_kext(&tool_out.join("UTBMap.kext"));
+        write_minimal_kext(&tool_out.join("USBToolBox.kext"));
 
-        // EFI-папка с конфигом, где уже есть UTBDefault
+        // EFI-папка с конфигом, где уже есть USBToolBox и UTBDefault
         let efi = tmp.join("volume").join("EFI");
         let oc = efi.join("OC");
         std::fs::create_dir_all(&oc).unwrap();
@@ -268,6 +382,9 @@ mod tests {
         assert!(oc.join("Kexts/UTBMap.kext/Contents/MacOS/UTBMap").exists());
         assert!(report.utbmap_registered);
         assert!(report.utbdefault_disabled);
+        assert!(report.toolbox_present);
+        assert!(report.toolbox_registered);
+        assert!(report.xhciportlimit_disabled);
         assert!(report.config_path.is_some());
         assert!(oc.join("config.plist.bak-openefi").exists(), "нужна резервная копия");
 
@@ -276,10 +393,73 @@ mod tests {
             .into_dictionary()
             .unwrap();
         let bs = bundles(&root);
-        let utbmap = bs.iter().find(|(b, _)| b.ends_with("UTBMap.kext")).unwrap();
-        assert!(utbmap.1, "UTBMap должен быть включён");
+        let utbmap_pos = bs.iter().position(|(b, _)| b.ends_with("UTBMap.kext")).unwrap();
+        let toolbox_pos = bs.iter().position(|(b, _)| b.ends_with("USBToolBox.kext")).unwrap();
+        assert!(utbmap_pos > toolbox_pos, "USBToolBox должен идти до UTBMap");
+        assert!(bs[utbmap_pos].1, "UTBMap должен быть включён");
+        assert!(bs[toolbox_pos].1, "USBToolBox должен быть включён");
         let utbdefault = bs.iter().find(|(b, _)| b.ends_with("UTBDefault.kext")).unwrap();
         assert!(!utbdefault.1, "UTBDefault должен быть отключён");
+        let xpl = root
+            .get("Kernel").and_then(|k| k.as_dictionary())
+            .and_then(|k| k.get("Quirks")).and_then(|q| q.as_dictionary())
+            .and_then(|q| q.get("XhciPortLimit")).and_then(|v| v.as_boolean());
+        assert_eq!(xpl, Some(false), "XhciPortLimit должен быть выключен");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_install_utbmap_toolbox_sibling_registered_before_map() {
+        let tmp = std::env::temp_dir().join(format!("openefi-utbmap4-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // вывод утилиты содержит и UTBMap, и лежащий рядом USBToolBox
+        let tool_out = tmp.join("tool-output");
+        write_minimal_kext(&tool_out.join("UTBMap.kext"));
+        write_minimal_kext(&tool_out.join("USBToolBox.kext"));
+
+        let efi = tmp.join("volume").join("EFI");
+        let oc = efi.join("OC");
+        std::fs::create_dir_all(&oc).unwrap();
+        std::fs::write(oc.join("config.plist"), config_without_toolbox()).unwrap();
+
+        let report = install_utbmap(&tool_out, &tmp.join("volume")).unwrap();
+        assert!(report.toolbox_present, "USBToolBox.kext должен быть скопирован из соседней папки");
+        assert!(report.toolbox_registered, "USBToolBox.kext должен быть зарегистрирован");
+        assert!(oc.join("Kexts/USBToolBox.kext/Contents/Info.plist").exists());
+
+        let root = Value::from_reader(std::fs::File::open(oc.join("config.plist")).unwrap())
+            .unwrap()
+            .into_dictionary()
+            .unwrap();
+        let bs = bundles(&root);
+        let utbmap_pos = bs.iter().position(|(b, _)| b.ends_with("UTBMap.kext")).unwrap();
+        let toolbox_pos = bs.iter().position(|(b, _)| b.ends_with("USBToolBox.kext")).unwrap();
+        assert!(toolbox_pos < utbmap_pos, "вставка USBToolBox — до UTBMap");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_install_utbmap_toolbox_missing_warns() {
+        let tmp = std::env::temp_dir().join(format!("openefi-utbmap5-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // в выводе утилиты только UTBMap — USBToolBox.kext отсутствует
+        let tool_out = tmp.join("tool-output");
+        write_minimal_kext(&tool_out.join("UTBMap.kext"));
+
+        let efi = tmp.join("volume").join("EFI");
+        let oc = efi.join("OC");
+        std::fs::create_dir_all(&oc).unwrap();
+        std::fs::write(oc.join("config.plist"), config_without_toolbox()).unwrap();
+
+        let report = install_utbmap(&tool_out, &tmp.join("volume")).unwrap();
+        assert!(!report.toolbox_present, "USBToolBox.kext нет нигде");
+        assert!(!report.toolbox_registered, "недопустимо регистрировать отсутствующий кекст");
+        assert!(report.utbmap_registered);
+        assert!(report.xhciportlimit_disabled, "кварк выключается независимо от компаньона");
 
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -297,6 +477,8 @@ mod tests {
         let report = install_utbmap(&kext, &tmp.join("volume")).unwrap();
         assert!(report.config_path.is_none(), "конфига нет — править нечего");
         assert!(!report.utbmap_registered);
+        assert!(!report.toolbox_registered);
+        assert!(!report.xhciportlimit_disabled);
         assert!(efi.join("OC/Kexts/UTBMap.kext/Contents/Info.plist").exists());
         std::fs::remove_dir_all(&tmp).ok();
     }

@@ -347,6 +347,11 @@ pub fn match_kexts(report: &HardwareReport, macos_darwin: u32) -> Vec<KextEntry>
         }
     }
 
+    // NVMe-накопители: NVMeFix для совместимости и энергопотребления
+    if report.storage.iter().any(|s| s.kind == "NVMe") {
+        selected.push("NVMeFix".into());
+    }
+
     if report.board_name.to_uppercase().contains("NUC") {
         // NUC-системы обычно имеют PCIe-ридер Realtek
     }

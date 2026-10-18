@@ -37,6 +37,15 @@ pub struct GpuInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct StorageInfo {
+    pub name: String,
+    /// "NVMe" | "SATA" | "eMMC" | "USB" | "Unknown"
+    pub kind: String,
+    pub size_gb: Option<f64>,
+    pub note: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct HardwareReport {
     pub os: String,
     pub platform: String,
@@ -47,6 +56,8 @@ pub struct HardwareReport {
     pub network: Vec<DeviceInfo>,
     pub audio: Vec<DeviceInfo>,
     pub bluetooth: Vec<DeviceInfo>,
+    #[serde(default)]
+    pub storage: Vec<StorageInfo>,
     pub warnings: Vec<String>,
 }
 
@@ -63,6 +74,7 @@ pub struct PciDevice {
 pub fn scan() -> HardwareReport {
     let mut warnings = Vec::new();
     let os = std::env::consts::OS.to_string();
+    let arch = std::env::consts::ARCH;
 
     let mut sys = System::new();
     sys.refresh_cpu_all();
@@ -78,12 +90,18 @@ pub fn scan() -> HardwareReport {
     let physical_cores = System::physical_core_count().unwrap_or(sys.cpus().len());
     let threads = sys.cpus().len();
 
+    // Производитель CPU: сначала настоящий CPUID (x86_64), затем эвристика по имени
+    let cpuid_vendor = cpuid_vendor();
     let (manufacturer, name): (String, String) = if cpu_name.to_uppercase().contains("RYZEN")
         || cpu_name.to_uppercase().contains("EPYC")
         || cpu_name.to_uppercase().contains("ATHLON")
         || cpu_name.to_uppercase().contains("THREADRIPPER")
     {
         ("AMD".to_string(), cpu_name.clone())
+    } else if cpu_name.is_empty() && arch == "aarch64" && os == "macos" {
+        ("Apple".to_string(), "Apple Silicon".to_string())
+    } else if let Some(v) = cpuid_vendor {
+        (v, cpu_name.clone())
     } else {
         ("Intel".to_string(), cpu_name.clone())
     };
@@ -110,6 +128,17 @@ pub fn scan() -> HardwareReport {
     let network = classify_network(&pci_devices, &usb_devices);
     let audio = classify_audio(&pci_devices, &os);
     let bluetooth = classify_bluetooth(&usb_devices);
+    let storage = scan_storage(&os);
+
+    // Глобальное предупреждение о проблемных для macOS NVMe
+    let bad_nvme = storage
+        .iter()
+        .any(|s| s.kind == "NVMe" && s.note.is_some());
+    if bad_nvme {
+        warnings.push(
+            "Среди накопителей есть NVMe, известный проблемами в macOS — возможны паники при установке".into(),
+        );
+    }
 
     let memory_bytes = sys.total_memory();
     let memory_gb = (memory_bytes as f64 / 1024.0 / 1024.0 / 1024.0 * 10.0).round() / 10.0;
@@ -131,8 +160,199 @@ pub fn scan() -> HardwareReport {
         network,
         audio,
         bluetooth,
+        storage,
         warnings,
     }
+}
+
+/// Производитель CPU по инструкции CPUID (leaves EBX/EDX/ECX); None — не x86_64 или не распознали
+#[cfg(target_arch = "x86_64")]
+fn cpuid_vendor() -> Option<String> {
+    let r = std::arch::x86_64::__cpuid(0);
+    let bytes: [u8; 12] = [
+        r.ebx as u8,
+        (r.ebx >> 8) as u8,
+        (r.ebx >> 16) as u8,
+        (r.ebx >> 24) as u8,
+        r.edx as u8,
+        (r.edx >> 8) as u8,
+        (r.edx >> 16) as u8,
+        (r.edx >> 24) as u8,
+        r.ecx as u8,
+        (r.ecx >> 8) as u8,
+        (r.ecx >> 16) as u8,
+        (r.ecx >> 24) as u8,
+    ];
+    match std::str::from_utf8(&bytes) {
+        Ok("GenuineIntel") => Some("Intel".into()),
+        Ok("AuthenticAMD") => Some("AMD".into()),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn cpuid_vendor() -> Option<String> {
+    None
+}
+
+/// Модели NVMe, известные проблемами в macOS (паники при установке/загрузке):
+/// Samsung PM981 (MZVLB), PM991 (MZVLQ), SK hynix BC501, Kioxia BG3/BG4 (KBG30Z/KBG40Z)
+const BAD_NVME_MARKERS: &[&str] = &["mzvlb", "mzvlq", "bc501", "kbg30z", "kbg40z"];
+
+fn nvme_note(model: &str) -> Option<String> {
+    let m = model.to_lowercase();
+    if BAD_NVME_MARKERS.iter().any(|b| m.contains(b)) {
+        Some(
+            "Проблемный для macOS NVMe (PM981/PM991 и родня) — частые паники; поможет NVMeFix или замена".into(),
+        )
+    } else {
+        None
+    }
+}
+
+fn scan_storage(os: &str) -> Vec<StorageInfo> {
+    match os {
+        "linux" => scan_storage_linux(),
+        "windows" => scan_storage_windows().unwrap_or_default(),
+        "macos" => scan_storage_macos().unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
+/// Linux: /sys/block/* — модель и размер лежат рядом с устройством
+fn scan_storage_linux() -> Vec<StorageInfo> {
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir("/sys/block") else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let dev = entry.file_name().to_string_lossy().to_string();
+        // виртуальные и служебные устройства не нужны
+        if dev.starts_with("loop") || dev.starts_with("ram") || dev.starts_with("zram") || dev.starts_with("fd") {
+            continue;
+        }
+        let base = entry.path();
+        let model = read_trim(&base.join("device/model")).unwrap_or_else(|| dev.clone());
+        let size_gb = read_trim(&base.join("size"))
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(|sectors| (sectors * 512) as f64 / 1e9)
+            .map(|gb| (gb * 10.0).round() / 10.0);
+        let kind = if dev.starts_with("nvme") {
+            "NVMe"
+        } else if dev.starts_with("mmcblk") {
+            "eMMC"
+        } else if std::fs::read_link(&base)
+            .map(|p| p.to_string_lossy().contains("/usb"))
+            .unwrap_or(false)
+        {
+            "USB"
+        } else {
+            "SATA"
+        };
+        let note = if kind == "NVMe" { nvme_note(&model) } else { None };
+        out.push(StorageInfo {
+            name: model.trim().to_string(),
+            kind: kind.into(),
+            size_gb,
+            note,
+        });
+    }
+    out
+}
+
+/// Windows: Get-PhysicalDisk — BusType|FriendlyName|Size
+fn scan_storage_windows() -> Result<Vec<StorageInfo>, String> {
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-Command",
+            "Get-PhysicalDisk | ForEach-Object { [string]$_.BusType + '|' + [string]$_.FriendlyName + '|' + [string]$_.Size }",
+        ])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.splitn(3, '|');
+        let bus = parts.next().unwrap_or("").trim();
+        let model = parts.next().unwrap_or("").trim();
+        let size = parts.next().unwrap_or("").trim();
+        if model.is_empty() {
+            continue;
+        }
+        let kind = match bus {
+            "NVMe" => "NVMe",
+            "SATA" => "SATA",
+            "USB" => "USB",
+            _ => "Unknown",
+        };
+        let size_gb = size.parse::<f64>().ok().map(|b| (b / 1e9 * 10.0).round() / 10.0);
+        let note = if kind == "NVMe" { nvme_note(model) } else { None };
+        out.push(StorageInfo {
+            name: model.to_string(),
+            kind: kind.into(),
+            size_gb,
+            note,
+        });
+    }
+    Ok(out)
+}
+
+/// macOS: NVMe из system_profiler SPNVMeDataType, SATA — из SPStorageDataType
+fn scan_storage_macos() -> Result<Vec<StorageInfo>, String> {
+    let output = Command::new("system_profiler")
+        .args(["SPNVMeDataType", "SPStorageDataType", "-json"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+
+    if let Some(items) = value.get("SPNVMeDataType").and_then(|v| v.as_array()) {
+        for item in items {
+            let Some(model) = item.get("_name").and_then(|n| n.as_str()) else { continue };
+            let size_gb = ["capacity_in_bytes", "size_in_bytes"]
+                .iter()
+                .find_map(|k| item.get(k).and_then(|v| v.as_f64()))
+                .map(|b| (b / 1e9 * 10.0).round() / 10.0);
+            out.push(StorageInfo {
+                name: model.to_string(),
+                kind: "NVMe".into(),
+                size_gb,
+                note: nvme_note(model),
+            });
+        }
+    }
+    if let Some(items) = value.get("SPStorageDataType").and_then(|v| v.as_array()) {
+        for item in items {
+            let interconnect = item
+                .get("physical_interconnect")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if !interconnect.eq_ignore_ascii_case("SATA") {
+                continue;
+            }
+            let name = item
+                .get("_name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("SATA-диск")
+                .to_string();
+            // один и тот же диск виден по нескольким томам — дедуп по имени
+            if out.iter().any(|s| s.name == name) {
+                continue;
+            }
+            out.push(StorageInfo {
+                name,
+                kind: "SATA".into(),
+                size_gb: None,
+                note: None,
+            });
+        }
+    }
+    Ok(out)
 }
 
 fn read_trim(path: &Path) -> Option<String> {
@@ -450,16 +670,19 @@ fn detect_platform(os: &str, board: &str) -> String {
 }
 
 fn is_amd_apu_name(name: &str) -> bool {
+    // Важно: без маркера «Vega» — иначе dGPU Vega 56/64/Radeon VII (их имена
+    // тоже содержат «Vega») ложно классифицируются как iGPU.
+    // «Graphics» ловит Windows-имя iGPU «AMD Radeon(TM) Graphics».
     const APU_MARKERS: &[&str] = &[
         "Raven", "Picasso", "Renoir", "Lucienne", "Cezanne", "Barcel", "Rembrandt",
-        "Mendocino", "Phoenix", "Hawk Point", "Strix", "Vega", "Radeon 610M",
-        "Radeon 680M", "Radeon 780M", "Radeon 880M", "Radeon 890M", "Graphics",
-        "Apu",
+        "Mendocino", "Phoenix", "Hawk Point", "Strix",
+        "Radeon 610M", "Radeon 660M", "Radeon 680M", "Radeon 780M",
+        "Radeon 880M", "Radeon 890M", "Graphics",
     ];
     APU_MARKERS.iter().any(|m| name.to_lowercase().contains(&m.to_lowercase()))
 }
 
-fn classify_gpus(pci: &[PciDevice], cpu_codename: &Option<String>, cpu_manufacturer: &str) -> Vec<GpuInfo> {
+fn classify_gpus(pci: &[PciDevice], cpu_codename: &Option<String>, _cpu_manufacturer: &str) -> Vec<GpuInfo> {
     let db = PciDatabase::global();
     let mut gpus = Vec::new();
     for dev in pci {
@@ -487,7 +710,7 @@ fn classify_gpus(pci: &[PciDevice], cpu_codename: &Option<String>, cpu_manufactu
         let (device_type, codename) = if dev.vendor == "8086" {
             ("Integrated GPU".to_string(), cpu_codename.clone())
         } else if dev.vendor == "1002" || dev.vendor == "1022" {
-            let igpu = is_amd_apu_name(&device_name) || is_amd_apu_name(cpu_manufacturer);
+            let igpu = is_amd_apu_name(&device_name);
             let t = if igpu { "Integrated GPU" } else { "Discrete GPU" };
             (t.to_string(), Some(device_name.clone()))
         } else if dev.vendor == "10de" {
@@ -535,11 +758,56 @@ fn gpu_macos_limits(vendor: &str, name: &str, device_type: &str) -> (Option<u32>
         );
     }
     if vendor == "1002" || vendor == "1022" {
-        if n.contains("navi 3") || n.contains("navi3") {
-            return (Some(23), Some("RDNA 3: нативно с Ventura 13".into()));
+        // iGPU Ryzen (Renoir/Cezanne/Rembrandt и т.п.): нативной поддержки нет вообще,
+        // нужен сообществом кекст NootedRed. Проверяем раньше Vega: имена APU
+        // содержат «Radeon RX Vega 6/7/8» и иначе ложно попали бы в ветку Vega dGPU.
+        if device_type == "Integrated GPU" {
+            return (
+                None,
+                Some(
+                    "iGPU Ryzen: в macOS не поддерживается нативно — нужен кекст NootedRed".into(),
+                ),
+            );
         }
-        if n.contains("navi 2") || n.contains("navi2") {
-            return (Some(24), Some("RDNA 2: нативно до Sequoia 15, нужен NootRX/WhateverGreen".into()));
+        // Navi 3 (RX 7000): драйверов macOS нет и не будет
+        if n.contains("navi 3") {
+            return (
+                Some(0),
+                Some("Navi 3 (RX 7000): драйверов для macOS нет — не заведётся, нужна RX 5000/6000".into()),
+            );
+        }
+        // Navi 24 (RX 6500 XT/6400): драйвера тоже нет; проверяем раньше Navi 2
+        if n.contains("navi 24") {
+            return (
+                Some(0),
+                Some("Navi 24 (RX 6500 XT/6400): поддержки macOS нет — берите RX 6600 (Navi 23)".into()),
+            );
+        }
+        // Navi 22: нативен только мобильный (6700M/6800M из MacBook Pro 2021),
+        // десктопные 6700/6750 XT — через NootRX
+        if n.contains("navi 22") {
+            return (
+                Some(25),
+                Some("Navi 22: 6700M/6800M нативно; RX 6700 XT/6750 XT — только через NootRX".into()),
+            );
+        }
+        if n.contains("navi 2") {
+            return (
+                Some(25),
+                Some("RDNA 2 (RX 6600/6800/6900): нативно, часто нужен boot-arg agdpmod=pikera".into()),
+            );
+        }
+        if n.contains("navi 1") {
+            return (
+                Some(25),
+                Some("RDNA 1 (RX 5000): нативно, часто нужен boot-arg agdpmod=pikera".into()),
+            );
+        }
+        if n.contains("vega") {
+            return (
+                Some(22),
+                Some("Vega: нативно до Ventura 13; в Sonoma 14+ — только через OCLP".into()),
+            );
         }
         if n.contains("polaris") || n.contains("lexa") || n.contains("ellesmere") || n.contains("baffin") {
             return (
@@ -808,6 +1076,73 @@ mod tests {
         assert_eq!(gpu.device_type, "Discrete GPU");
         assert!(gpu.name.to_lowercase().contains("radeon"), "имя: {}", gpu.name);
         assert_eq!(gpu.max_darwin, Some(22), "Polaris нативно до Ventura (darwin 22)");
+    }
+
+    #[test]
+    fn test_gpu_limits_amd_families() {
+        // Vega dGPU: дискретка (не iGPU!), нативно до Ventura, в Sonoma — OCLP
+        let vega = PciDevice {
+            vendor: "1002".into(),
+            device: "687f".into(), // Vega 10 XT [Radeon RX Vega 64]
+            class: 0,
+            name_hint: Some("Radeon RX Vega 64".into()),
+            pnp_class: Some("display".into()),
+        };
+        let gpus = classify_gpus(&[vega], &None, "GenuineIntel");
+        assert_eq!(gpus.len(), 1);
+        assert_eq!(gpus[0].device_type, "Discrete GPU", "Vega 64 — не iGPU");
+        assert_eq!(gpus[0].max_darwin, Some(22));
+
+        let cases: &[(&str, &str, Option<u32>)] = &[
+            // (имя из PCI-базы, устройство, ожидаемый max_darwin)
+            ("Navi 21 [Radeon RX 6900 XT]", "73bf", Some(25)),
+            ("Navi 23 [Radeon RX 6600/6600 XT]", "73ff", Some(25)),
+            ("Navi 22 [Radeon RX 6700/6700 XT/6750 XT]", "73df", Some(25)),
+            ("Navi 24 [Radeon RX 6400/6500 XT]", "743f", Some(0)),
+            ("Navi 31 [Radeon RX 7900 XT/7900 XTX]", "744c", Some(0)),
+            ("Navi 10 [Radeon RX 5600 OEM/5600 XT / 5700/5700 XT]", "731f", Some(25)),
+            ("Polaris 21 XL [Radeon RX 550/550X]", "699f", Some(22)),
+            ("Vega 20 [Radeon VII]", "66af", Some(22)),
+        ];
+        for (name, dev_id, want) in cases {
+            let dev = PciDevice {
+                vendor: "1002".into(),
+                device: dev_id.to_string(),
+                class: 0,
+                name_hint: Some(name.to_string()),
+                pnp_class: Some("display".into()),
+            };
+            let gpus = classify_gpus(&[dev], &None, "GenuineIntel");
+            assert_eq!(gpus.len(), 1, "{name}");
+            assert_eq!(gpus[0].max_darwin, *want, "{name}");
+        }
+    }
+
+    #[test]
+    fn test_amd_igpu_nootedred_note() {
+        // iGPU Ryzen: Windows-имя без «Vega», только «Graphics»
+        let igpu = PciDevice {
+            vendor: "1002".into(),
+            device: "1638".into(), // Cezanne
+            class: 0,
+            name_hint: Some("AMD Radeon(TM) Graphics".into()),
+            pnp_class: Some("display".into()),
+        };
+        let gpus = classify_gpus(&[igpu], &Some("Cezanne".into()), "AMD");
+        assert_eq!(gpus.len(), 1);
+        assert_eq!(gpus[0].device_type, "Integrated GPU");
+        let note = gpus[0].note.as_deref().unwrap_or_default();
+        assert!(note.contains("NootedRed"), "note: {note}");
+        assert_eq!(gpus[0].max_darwin, None);
+    }
+
+    #[test]
+    fn test_nvme_note_known_bad_models() {
+        assert!(nvme_note("Samsung PM981 MZVLB512HAJQ-000L7").is_some());
+        assert!(nvme_note("SAMSUNG MZVLQ512HALU-00000").is_some());
+        assert!(nvme_note("SK hynix BC501 HFM512GDHTNI-8000A").is_some());
+        assert!(nvme_note("Samsung SSD 980 PRO 1TB").is_none());
+        assert!(nvme_note("WD Blue SN570").is_none());
     }
 
     #[test]

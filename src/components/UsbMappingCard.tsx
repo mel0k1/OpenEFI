@@ -122,6 +122,12 @@ export function UsbMappingCard({ base }: Props) {
                 {report.config_path ? (
                   <>
                     <div className="text-muted-foreground">{t("usb.configPatched")}</div>
+                    {report.toolbox_registered && (
+                      <div className="text-muted-foreground">{t("usb.toolboxRegistered")}</div>
+                    )}
+                    {report.xhciportlimit_disabled && (
+                      <div className="text-muted-foreground">{t("usb.xhciOff")}</div>
+                    )}
                     {report.backup_made && (
                       <div className="text-muted-foreground break-all">
                         {t("usb.configBackup", { path: `${report.config_path}.bak-openefi` })}
@@ -133,6 +139,12 @@ export function UsbMappingCard({ base }: Props) {
                 )}
               </div>
             </div>
+            {report.config_path && !report.toolbox_present && (
+              <div className="flex items-start gap-2 rounded-md bg-[var(--warning)]/10 p-3 text-[var(--warning)]">
+                <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                <div className="text-xs leading-relaxed">{t("usb.toolboxMissing")}</div>
+              </div>
+            )}
             <div className="text-muted-foreground text-xs">{t("usb.deleteHint")}</div>
           </div>
         )}
