@@ -184,6 +184,35 @@ pub fn download_kexts_to_efi(
     })
 }
 
+/// Скачать выбранные SSDT (.aml) из репозитория Dortania прямо в EFI/OC/ACPI.
+/// Если в EFI/OC найден config.plist — таблицы включаются в ACPI/Add (с бэкапом).
+#[tauri::command]
+pub fn download_ssdts_to_efi(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    ssdts: Vec<openefi_core::downloader::SsdtDownloadItem>,
+) -> Result<openefi_core::downloader::SsdtsToEfiReport, String> {
+    use tauri::Emitter;
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked = DialogExt::dialog(&window)
+        .file()
+        .set_title("Выберите EFI-папку или диск с EFI")
+        .blocking_pick_folder();
+
+    let Some(picked) = picked else {
+        return Err("Выбор папки отменён".into());
+    };
+    let base = picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь к папке")?;
+
+    openefi_core::downloader::download_ssdts(&ssdts, &base, |pr| {
+        let _ = app.emit("ssdt-dl-progress", pr);
+    })
+}
+
 /// Скачать утилиту USBToolBox (windows|macos) через диалог сохранения
 #[tauri::command]
 pub fn download_utb_tool(window: tauri::WebviewWindow, target: String) -> Result<String, String> {

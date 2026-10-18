@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { SsdtEfiInstall } from "@/components/SsdtEfiInstall";
 
 interface Props {
   report: HardwareReport;
@@ -97,6 +98,8 @@ export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin 
               </div>
             ))}
           </div>
+
+          <SsdtEfiInstall ssdts={ssdts} />
         </CardContent>
       </Card>
 

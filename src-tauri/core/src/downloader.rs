@@ -9,6 +9,7 @@ use std::collections::HashSet;
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 
+use plist::{Dictionary, Value};
 use serde::{Deserialize, Serialize};
 
 const USER_AGENT: &str = concat!("OpenEFI/", env!("CARGO_PKG_VERSION"), " (github.com/mel0k1/OpenEFI)");
@@ -574,6 +575,189 @@ pub fn download_kexts(
     })
 }
 
+/// SSDT для скачивания (из матрицы ssdts.rs)
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SsdtDownloadItem {
+    pub name: String,
+    /// Имя на диске (EFI/OC/ACPI) и в ACPI/Add/Path
+    pub file: String,
+    /// Имя файла в extra-files/compiled репозитория Dortania
+    pub repo_file: String,
+}
+
+/// Итоговый отчёт установки SSDT в EFI
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct SsdtsToEfiReport {
+    /// Каталог, куда легли таблицы (например «/Volumes/EFI/EFI/OC/ACPI»)
+    pub acpi_dir: String,
+    pub results: Vec<KextDownloadResult>,
+    /// Путь к отредактированному config.plist, если он был найден
+    pub config_path: Option<String>,
+    /// Сохранили ли резервную копию конфига
+    pub backup_made: bool,
+    /// Сколько таблиц включено/добавлено в ACPI/Add
+    pub registered: usize,
+}
+
+/// Включить существующие и добавить недостающие записи ACPI/Add
+/// для скачанных .aml. Возвращает (сколько таблиц, сделан ли бэкап).
+fn patch_acpi_add(config: &Path, files: &[String]) -> Result<(usize, bool), String> {
+    let mut root = Value::from_reader(std::io::BufReader::new(
+        std::fs::File::open(config).map_err(|e| format!("не открыть {}: {e}", config.display()))?,
+    ))
+    .map_err(|e| format!("не разобрать {}: {e}", config.display()))?
+    .into_dictionary()
+    .ok_or_else(|| format!("{} — не словарь plist", config.display()))?;
+
+    let acpi = root
+        .get_mut("ACPI")
+        .and_then(|v| v.as_dictionary_mut())
+        .ok_or("в config.plist нет секции ACPI")?;
+    let add = match acpi.get_mut("Add") {
+        Some(v) if matches!(v, Value::Array(_)) => v,
+        Some(_) => return Err("ACPI → Add в config.plist — не массив".into()),
+        None => {
+            acpi.insert("Add".into(), Value::Array(Vec::new()));
+            acpi.get_mut("Add").ok_or("не создать ACPI → Add")?
+        }
+    };
+    let entries = add.as_array_mut().unwrap();
+
+    let mut registered = 0usize;
+    for file in files {
+        let file_lc = file.to_lowercase();
+        // запись может лежать уже в конфиге (в т.ч. с подпапкой «ACPI/SSDT-….aml»)
+        let mut found = false;
+        for e in entries.iter_mut() {
+            let Some(d) = e.as_dictionary_mut() else { continue };
+            let matches = d
+                .get("Path")
+                .and_then(|p| p.as_string())
+                .map(|p| {
+                    let p = p.replace('\\', "/").to_lowercase();
+                    p == file_lc || p.ends_with(&format!("/{file_lc}"))
+                })
+                .unwrap_or(false);
+            if matches {
+                d.insert("Enabled".into(), Value::Boolean(true));
+                registered += 1;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            let mut d = Dictionary::new();
+            d.insert(
+                "Comment".into(),
+                Value::String(file.trim_end_matches(".aml").to_string()),
+            );
+            d.insert("Enabled".into(), Value::Boolean(true));
+            d.insert("Path".into(), Value::String(file.clone()));
+            entries.push(Value::Dictionary(d));
+            registered += 1;
+        }
+    }
+
+    // резервная копия до записи
+    let backup = config.with_extension("plist.bak-openefi");
+    std::fs::copy(config, &backup).map_err(|e| format!("не сделать копию {}: {e}", backup.display()))?;
+
+    let mut buf = Vec::new();
+    Value::Dictionary(root)
+        .to_writer_xml(&mut buf)
+        .map_err(|e| format!("не сериализовать {}: {e}", config.display()))?;
+    std::fs::write(config, buf).map_err(|e| format!("не записать {}: {e}", config.display()))?;
+    Ok((registered, true))
+}
+
+/// Основной сценарий: скачать выбранные SSDT (.aml) из репозитория Dortania
+/// в EFI/OC/ACPI. Если рядом есть config.plist — таблицы включаются в ACPI/Add
+/// (с резервной копией конфига).
+pub fn download_ssdts(
+    items: &[SsdtDownloadItem],
+    selected_dir: &Path,
+    mut progress: impl FnMut(DownloadProgress),
+) -> Result<SsdtsToEfiReport, String> {
+    let efi_base = resolve_efi_base(selected_dir);
+    let acpi_dir = efi_base.join("OC").join("ACPI");
+    std::fs::create_dir_all(&acpi_dir).map_err(|e| {
+        format!(
+            "не создать {} — папка может быть защищена от записи: {e}",
+            acpi_dir.display()
+        )
+    })?;
+
+    let agent = http_agent();
+    let total = items.len();
+    let mut results: Vec<KextDownloadResult> = Vec::new();
+    let mut done = 0usize;
+
+    for it in items {
+        let res = if it.repo_file.is_empty() {
+            KextDownloadResult {
+                name: it.name.clone(),
+                ok: false,
+                version: None,
+                installed: vec![],
+                message: Some(
+                    "прекомпилированного файла нет в репозитории Dortania — соберите вручную по гайду"
+                        .into(),
+                ),
+            }
+        } else {
+            let url = crate::ssdts::raw_url(&it.repo_file);
+            let dest = acpi_dir.join(&it.file);
+            match download_to_file(&agent, &url, &dest) {
+                Ok(_) => KextDownloadResult {
+                    name: it.name.clone(),
+                    ok: true,
+                    version: None,
+                    installed: vec![it.file.clone()],
+                    message: None,
+                },
+                Err(e) => KextDownloadResult {
+                    name: it.name.clone(),
+                    ok: false,
+                    version: None,
+                    installed: vec![],
+                    message: Some(e),
+                },
+            }
+        };
+        done += 1;
+        progress(DownloadProgress { done, total, kext: it.name.clone() });
+        results.push(res);
+    }
+
+    let ok_files: Vec<String> = results
+        .iter()
+        .filter(|r| r.ok)
+        .filter_map(|r| r.installed.first().cloned())
+        .collect();
+
+    // регистрация в config.plist
+    let mut config_path = None;
+    let mut backup_made = false;
+    let mut registered = 0usize;
+    if !ok_files.is_empty() {
+        let config = efi_base.join("OC").join("config.plist");
+        if config.is_file() {
+            let (n, backup) = patch_acpi_add(&config, &ok_files)?;
+            registered = n;
+            backup_made = backup;
+            config_path = Some(config.to_string_lossy().to_string());
+        }
+    }
+
+    Ok(SsdtsToEfiReport {
+        acpi_dir: acpi_dir.to_string_lossy().to_string(),
+        results,
+        config_path,
+        backup_made,
+        registered,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -767,6 +951,169 @@ mod tests {
         std::fs::create_dir_all(&tmp).unwrap();
         let installed = extract_kexts_from_zip(std::io::Cursor::new(&bytes), &tmp).unwrap();
         assert!(installed.contains(&"Lilu.kext".to_string()));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    fn config_with_plug_disabled() -> String {
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>ACPI</key>
+  <dict>
+    <key>Add</key>
+    <array>
+      <dict>
+        <key>Comment</key><string>SSDT-PLUG-DRTNIA</string>
+        <key>Enabled</key><false/>
+        <key>Path</key><string>SSDT-PLUG-DRTNIA.aml</string>
+      </dict>
+      <dict>
+        <key>Comment</key><string>чужая таблица</string>
+        <key>Enabled</key><true/>
+        <key>Path</key><string>SSDT-OTHER.aml</string>
+      </dict>
+    </array>
+  </dict>
+  <key>Kernel</key>
+  <dict><key>Add</key><array/></dict>
+</dict>
+</plist>"#
+            .into()
+    }
+
+    #[test]
+    fn test_patch_acpi_add_enable_and_append() {
+        let tmp = std::env::temp_dir().join(format!("openefi-acpi1-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let oc = tmp.join("volume").join("EFI").join("OC");
+        std::fs::create_dir_all(&oc).unwrap();
+        let config = oc.join("config.plist");
+        std::fs::write(&config, config_with_plug_disabled()).unwrap();
+
+        let (registered, backup) =
+            patch_acpi_add(&config, &["SSDT-PLUG-DRTNIA.aml".into(), "SSDT-AWAC.aml".into()]).unwrap();
+        assert_eq!(registered, 2, "включена PLUG + добавлена AWAC");
+        assert!(backup);
+        assert!(oc.join("config.plist.bak-openefi").exists(), "нужна резервная копия");
+
+        let root = Value::from_reader(std::fs::File::open(&config).unwrap())
+            .unwrap()
+            .into_dictionary()
+            .unwrap();
+        let arr = root
+            .get("ACPI").and_then(|a| a.as_dictionary()).and_then(|a| a.get("Add"))
+            .and_then(|a| a.as_array()).unwrap();
+        let paths: Vec<(String, bool)> = arr
+            .iter()
+            .filter_map(|v| v.as_dictionary())
+            .filter_map(|d| {
+                let p = d.get("Path")?.as_string()?.to_string();
+                let e = d.get("Enabled")?.as_boolean()?;
+                Some((p, e))
+            })
+            .collect();
+        assert_eq!(paths.len(), 3, "чужая таблица не тронута");
+        assert!(paths.contains(&("SSDT-PLUG-DRTNIA.aml".to_string(), true)));
+        assert!(paths.contains(&("SSDT-AWAC.aml".to_string(), true)));
+        assert!(paths.contains(&("SSDT-OTHER.aml".to_string(), true)));
+        // Kernel-секция не изменилась
+        assert!(root.get("Kernel").is_some());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_patch_acpi_add_subdir_path_matched() {
+        let tmp = std::env::temp_dir().join(format!("openefi-acpi2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let oc = tmp.join("EFI").join("OC");
+        std::fs::create_dir_all(&oc).unwrap();
+        let config = oc.join("config.plist");
+        // путь с подпапкой и другим регистром — всё равно должен совпасть
+        std::fs::write(
+            &config,
+            config_with_plug_disabled().replace("SSDT-PLUG-DRTNIA.aml</string>", "ACPI/SSDT-PLUG-DRTNIA.aml</string>").replace("<false/>", "<true/>"),
+        )
+        .unwrap();
+
+        let (registered, _) = patch_acpi_add(&config, &["SSDT-PLUG-DRTNIA.aml".into()]).unwrap();
+        assert_eq!(registered, 1, "найдена запись с подпапкой, дубликат не добавлен");
+        let root = Value::from_reader(std::fs::File::open(&config).unwrap())
+            .unwrap()
+            .into_dictionary()
+            .unwrap();
+        let arr = root
+            .get("ACPI").and_then(|a| a.as_dictionary()).and_then(|a| a.get("Add"))
+            .and_then(|a| a.as_array()).unwrap();
+        assert_eq!(arr.len(), 2, "новая запись не добавлена");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_patch_acpi_add_no_acpi_section() {
+        let tmp = std::env::temp_dir().join(format!("openefi-acpi3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let oc = tmp.join("EFI").join("OC");
+        std::fs::create_dir_all(&oc).unwrap();
+        let config = oc.join("config.plist");
+        std::fs::write(
+            &config,
+            r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>Kernel</key><dict/></dict></plist>"#,
+        )
+        .unwrap();
+        let err = patch_acpi_add(&config, &["SSDT-AWAC.aml".into()]).unwrap_err();
+        assert!(err.contains("ACPI"), "внятная ошибка: {err}");
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn test_download_ssdts_reports_manual_only() {
+        // элемент без repo_file: папка создаётся, результата ok нет, конфиг не трогается
+        let tmp = std::env::temp_dir().join(format!("openefi-acpi4-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        let volume = tmp.join("volume");
+        std::fs::create_dir_all(volume.join("EFI").join("OC")).unwrap();
+
+        let items = vec![SsdtDownloadItem {
+            name: "SSDT-DMAR".into(),
+            file: "SSDT-DMAR.aml".into(),
+            repo_file: String::new(),
+        }];
+        let report = download_ssdts(&items, &volume, |_| {}).unwrap();
+        assert_eq!(report.results.len(), 1);
+        assert!(!report.results[0].ok);
+        assert!(report.results[0].message.as_deref().unwrap_or_default().contains("Dortania"));
+        assert!(report.config_path.is_none());
+        assert_eq!(report.registered, 0);
+        assert!(volume.join("EFI").join("OC").join("ACPI").is_dir());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    #[ignore] // сетевой тест: запускается вручную
+    fn test_network_fetch_ssdt_raw() {
+        let tmp = std::env::temp_dir().join(format!("openefi-net-ssdt-{}", std::process::id()));
+        let volume = tmp.join("volume");
+        std::fs::create_dir_all(volume.join("EFI")).unwrap(); // чтобы resolve_efi_base нашёл EFI
+        let items = vec![
+            SsdtDownloadItem {
+                name: "SSDT-PLUG-DRTNIA".into(),
+                file: "SSDT-PLUG-DRTNIA.aml".into(),
+                repo_file: "SSDT-PLUG-DRTNIA.aml".into(),
+            },
+            SsdtDownloadItem {
+                name: "SSDT-AWAC-DRTNIA".into(),
+                file: "SSDT-AWAC.aml".into(),
+                repo_file: "SSDT-AWAC.aml".into(),
+            },
+        ];
+        let report = download_ssdts(&items, &volume, |_| {}).unwrap();
+        assert_eq!(report.results.iter().filter(|r| r.ok).count(), 2);
+        let plug = volume.join("EFI").join("OC").join("ACPI").join("SSDT-PLUG-DRTNIA.aml");
+        let bytes = std::fs::read(&plug).unwrap();
+        assert!(bytes.starts_with(b"SSDT"), "AML должен начинаться с сигнатуры SSDT");
+        assert!(bytes.len() > 100);
+        let awac = volume.join("EFI").join("OC").join("ACPI").join("SSDT-AWAC.aml");
+        assert!(std::fs::read(&awac).unwrap().starts_with(b"SSDT"));
         std::fs::remove_dir_all(&tmp).ok();
     }
 }

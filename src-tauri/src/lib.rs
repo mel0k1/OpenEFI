@@ -19,6 +19,7 @@ pub fn run() {
             commands::generate_config_plist,
             commands::save_config_plist,
             commands::download_kexts_to_efi,
+            commands::download_ssdts_to_efi,
             commands::download_utb_tool,
             commands::install_utbmap_to_efi,
             commands::download_driver_file,

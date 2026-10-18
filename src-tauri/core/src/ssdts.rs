@@ -8,12 +8,45 @@ use crate::hardware::HardwareReport;
 const COMPILED_URL: &str = "https://github.com/dortania/Getting-Started-With-ACPI/tree/master/extra-files/compiled";
 const GUIDE_URL: &str = "https://dortania.github.io/Getting-Started-With-ACPI/";
 
+/// Прямые ссылки на прекомпилированные AML (raw, без лимитов GitHub API)
+pub const COMPILED_RAW: &str =
+    "https://raw.githubusercontent.com/dortania/Getting-Started-With-ACPI/master/extra-files/compiled";
+
+/// Прямая ссылка на прекомпилированный AML в репозитории Dortania
+pub fn raw_url(repo_file: &str) -> String {
+    format!("{COMPILED_RAW}/{repo_file}")
+}
+
+/// Файлы, реально существующие в extra-files/compiled (сверено с GitHub API).
+/// Прекомпила SSDT-DMAR в репозитории нет — гайд предлагает только ручной метод.
+pub const DORTANIA_COMPILED_FILES: &[&str] = &[
+    "SSDT-AWAC.aml",
+    "SSDT-CPUR.aml",
+    "SSDT-EC-DESKTOP.aml",
+    "SSDT-EC-LAPTOP.aml",
+    "SSDT-EC-USBX-DESKTOP.aml",
+    "SSDT-EC-USBX-LAPTOP.aml",
+    "SSDT-IMEI-S.aml",
+    "SSDT-IMEI.aml",
+    "SSDT-PLUG-DRTNIA.aml",
+    "SSDT-PMC.aml",
+    "SSDT-PNLF.aml",
+    "SSDT-RHUB.aml",
+    "SSDT-RTC0-RANGE-HEDT.aml",
+    "SSDT-UNC.aml",
+    "SSDT-XOSI.aml",
+];
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SsdtEntry {
     /// Имя без расширения, напр. "SSDT-PLUG-DRTNIA"
     pub name: String,
     /// Имя файла для EFI/OC/ACPI и ACPI/Add/Path
     pub file: String,
+    /// Имя файла в extra-files/compiled репозитория Dortania.
+    /// Пусто — прекомпила нет, скачивание недоступно (только ручной метод).
+    #[serde(default)]
+    pub repo_file: String,
     pub description: String,
     /// Обязателен для данной конфигурации или опционален
     pub kind: String,
@@ -23,9 +56,20 @@ pub struct SsdtEntry {
 }
 
 fn ssdt(name: &str, description: &str, kind: &str) -> SsdtEntry {
+    ssdt_file(name, &format!("{name}.aml"), description, kind)
+}
+
+/// SSDT с явным именем файла в репозитории Dortania.
+/// `repo_file` пуст — прекомпила в репозитории нет (скачивание недоступно).
+fn ssdt_file(name: &str, repo_file: &str, description: &str, kind: &str) -> SsdtEntry {
     SsdtEntry {
         name: name.to_string(),
-        file: format!("{name}.aml"),
+        file: if repo_file.is_empty() {
+            format!("{name}.aml")
+        } else {
+            repo_file.to_string()
+        },
+        repo_file: repo_file.to_string(),
         description: description.to_string(),
         kind: kind.to_string(),
         url: COMPILED_URL.to_string(),
@@ -86,15 +130,18 @@ pub fn recommend(report: &HardwareReport) -> Vec<SsdtEntry> {
     // SSDT-AWAC — RTC AWAC на новых платформах
     if is_intel {
         if intel_has_awac(&codename) {
-            out.push(ssdt(
+            // в репозитории Dortania файл называется SSDT-AWAC.aml (без -DRTNIA)
+            out.push(ssdt_file(
                 "SSDT-AWAC-DRTNIA",
+                "SSDT-AWAC.aml",
                 "Возврат классического RTC на чипсетах 300-й серии и новее — обязательна",
                 "Обязательна",
             ));
         }
     } else {
-        out.push(ssdt(
+        out.push(ssdt_file(
             "SSDT-AWAC-DRTNIA",
+            "SSDT-AWAC.aml",
             "RTC-фикс: нужна для чипсетов AMD B550/A520/X570",
             "Рекомендуется",
         ));
@@ -127,9 +174,11 @@ pub fn recommend(report: &HardwareReport) -> Vec<SsdtEntry> {
         ));
     }
 
-    // SSDT-DMAR — если пользователь включил VT-d и не отключает в BIOS
-    out.push(ssdt(
+    // SSDT-DMAR — если пользователь включил VT-d и не отключает в BIOS.
+    // Прекомпила в репозитории нет — только ручная сборка по гайду.
+    out.push(ssdt_file(
         "SSDT-DMAR",
+        "",
         "Отключение DMAR/VT-d без захода в BIOS — только если VT-d включён",
         "Опциональна",
     ));
@@ -215,5 +264,41 @@ mod tests {
             assert!(s.file.starts_with("SSDT-"));
             assert_eq!(s.selected, s.kind != "Опциональна", "{}: selected соответствует kind", s.name);
         }
+    }
+
+    #[test]
+    fn test_repo_files_match_dortania_listing() {
+        // все платформы, дающие максимум разных SSDT
+        let reports = [
+            report("Intel", Some("Coffee Lake-S"), "Desktop"),
+            report("Intel", Some("Haswell-E"), "Desktop"),
+            report("Intel", Some("Whiskey Lake-U"), "Laptop"),
+            report("AMD", Some("Vermeer"), "Desktop"),
+        ];
+        let mut seen = Vec::new();
+        for r in &reports {
+            for s in recommend(r) {
+                if s.repo_file.is_empty() {
+                    // без прекомпила только DMAR
+                    assert_eq!(s.name, "SSDT-DMAR", "{}: нет прекомпила", s.name);
+                    continue;
+                }
+                assert!(
+                    DORTANIA_COMPILED_FILES.contains(&s.repo_file.as_str()),
+                    "{}: файла {} нет в extra-files/compiled Dortania",
+                    s.name,
+                    s.repo_file
+                );
+                assert_eq!(s.file, s.repo_file, "{}: файл на диске = файл в репо", s.name);
+                if !seen.contains(&s.repo_file) {
+                    seen.push(s.repo_file.clone());
+                }
+            }
+        }
+        // AWAC указывает на SSDT-AWAC.aml (без суффикса -DRTNIA)
+        let r = report("Intel", Some("Coffee Lake-S"), "Desktop");
+        let awac = recommend(&r).into_iter().find(|s| s.name == "SSDT-AWAC-DRTNIA").unwrap();
+        assert_eq!(awac.file, "SSDT-AWAC.aml");
+        assert_eq!(raw_url("SSDT-PLUG-DRTNIA.aml"), format!("{COMPILED_RAW}/SSDT-PLUG-DRTNIA.aml"));
     }
 }

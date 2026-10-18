@@ -60,7 +60,7 @@ async function getAppVersion(): Promise<string> {
     return await getVersion();
   } catch {
     // dev-режим в браузере без Tauri-рантайма
-    return "0.4.0";
+    return "0.5.0";
   }
 }
 

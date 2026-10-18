@@ -103,6 +103,16 @@ export const ru: Record<string, string> = {
   "cfg.ssdtHintPre": "Скомпилированные файлы берите из",
   "cfg.ssdtHintLink": "репозитория Dortania",
   "cfg.ssdtHintPost": "— они помечены как precompiled. Файлы попадут в секцию ACPI/Add конфига.",
+  "ssdt.efiDesc":
+    "Скачаем прекомпилированные .aml из репозитория Dortania прямо в EFI/OC/ACPI. Если рядом найден config.plist — таблицы будут включены в ACPI/Add (с резервной копией конфига).",
+  "ssdt.download": "Выбрать EFI-папку и скачать SSDT",
+  "ssdt.downloading": "Скачиваю…",
+  "ssdt.selectFirst": "Отметьте хотя бы одну SSDT",
+  "ssdt.done": "Готово: {ok} из {total} таблиц",
+  "ssdt.failed": "Не удалось скачать ({n}):",
+  "ssdt.manual": "Нет автоскачивания: {names} — только вручную по гайду Dortania",
+  "ssdt.configPatched": "config.plist обновлён: таблиц включено в ACPI/Add: {n}",
+  "ssdt.configBackup": "Копия старого конфига: {path}",
   "cfg.genTitle": "Генерация config.plist",
   "cfg.genSubtitle": "Эталон OpenCore + ваши кексты, SSDT и SMBIOS",
   "cfg.acpiAdd": "ACPI / Add",
@@ -116,7 +126,7 @@ export const ru: Record<string, string> = {
   "cfg.dpOk": "AAPL,ig-platform-id для вашего iGPU",
   "cfg.dpEmpty": "пусто — интегрированной графики Intel не найдено",
   "cfg.genNote":
-    "Конфиг собирается на базе эталонного Sample.plist из OpenCorePkg, поэтому содержит все секции целиком. boot-args: -v keepsyms=1, XhciPortLimit выключен (darwin ≥ 20). SSDT .aml файлы нужно скачать отдельно и положить рядом с конфигом в EFI/OC/ACPI.",
+    "Конфиг собирается на базе эталонного Sample.plist из OpenCorePkg, поэтому содержит все секции целиком. boot-args: -v keepsyms=1, XhciPortLimit выключен (darwin ≥ 20). SSDT .aml файлы можно скачать кнопкой выше прямо в EFI/OC/ACPI.",
   "cfg.noSmbiosWarn":
     "Сначала сгенерируйте серийники на шаге SMBIOS — без них PlatformInfo конфига будет неполным.",
   "cfg.saved": "config.plist сохранён",
@@ -136,7 +146,7 @@ export const ru: Record<string, string> = {
   "exp.step2":
     "Скачайте кексты кнопкой «Выбрать EFI-папку и скачать» на шаге «Кексты» — они распакуются в EFI/OC/Kexts.",
   "exp.step3":
-    "Настройте config.plist: ACPI, Kernel → Add (снапшот через ProperTree), PlatformInfo с данными SMBIOS.",
+    "Скачайте SSDT .aml кнопкой на шаге «Конфиг» — они лягут в EFI/OC/ACPI и пропишутся в ACPI/Add. Затем снапшот config.plist через ProperTree и PlatformInfo с данными SMBIOS.",
   "exp.step4": "Замапьте USB-порты утилитой USBToolBox и добавьте UTBMap через помощник USB.",
   "exp.step5": "В BIOS включите UEFI, Above 4G Decoding, отключите Secure Boot и Resizable BAR.",
   "exp.step6": "Проверьте отчёт: сохраните JSON ниже — он пригодится при отладке и на форумах.",
@@ -267,6 +277,16 @@ export const en: Record<string, string> = {
   "cfg.ssdtHintPre": "Get compiled files from the",
   "cfg.ssdtHintLink": "Dortania repository",
   "cfg.ssdtHintPost": "— they are marked as precompiled. The files go into the config's ACPI/Add section.",
+  "ssdt.efiDesc":
+    "Download the precompiled .aml files from the Dortania repository right into EFI/OC/ACPI. If a config.plist is found nearby, the tables are enabled in ACPI/Add (with a config backup).",
+  "ssdt.download": "Pick EFI folder and download SSDTs",
+  "ssdt.downloading": "Downloading…",
+  "ssdt.selectFirst": "Check at least one SSDT first",
+  "ssdt.done": "Done: {ok} of {total} tables",
+  "ssdt.failed": "Failed to download ({n}):",
+  "ssdt.manual": "No auto-download: {names} — build manually per the Dortania guide",
+  "ssdt.configPatched": "config.plist updated: {n} tables enabled in ACPI/Add",
+  "ssdt.configBackup": "Old config backup: {path}",
   "cfg.genTitle": "config.plist generation",
   "cfg.genSubtitle": "OpenCore reference + your kexts, SSDTs and SMBIOS",
   "cfg.acpiAdd": "ACPI / Add",
@@ -280,7 +300,7 @@ export const en: Record<string, string> = {
   "cfg.dpOk": "AAPL,ig-platform-id for your iGPU",
   "cfg.dpEmpty": "empty — no Intel integrated graphics found",
   "cfg.genNote":
-    "The config is built on the reference Sample.plist from OpenCorePkg, so it contains all sections in full. boot-args: -v keepsyms=1, XhciPortLimit disabled (darwin ≥ 20). SSDT .aml files must be downloaded separately and placed next to the config in EFI/OC/ACPI.",
+    "The config is built on the reference Sample.plist from OpenCorePkg, so it contains all sections in full. boot-args: -v keepsyms=1, XhciPortLimit disabled (darwin ≥ 20). SSDT .aml files can be downloaded with the button above right into EFI/OC/ACPI.",
   "cfg.noSmbiosWarn":
     "Generate the serials on the SMBIOS step first — without them the config's PlatformInfo will be incomplete.",
   "cfg.saved": "config.plist saved",
@@ -300,7 +320,7 @@ export const en: Record<string, string> = {
   "exp.step2":
     "Download the kexts with the “Pick EFI folder and download” button on the Kexts step — they unpack into EFI/OC/Kexts.",
   "exp.step3":
-    "Set up config.plist: ACPI, Kernel → Add (snapshot via ProperTree), PlatformInfo with your SMBIOS data.",
+    "Download the SSDT .aml files with the button on the Config step — they land in EFI/OC/ACPI and get registered in ACPI/Add. Then snapshot config.plist via ProperTree and set PlatformInfo with your SMBIOS data.",
   "exp.step4": "Map your USB ports with the USBToolBox tool and add UTBMap via the USB helper.",
   "exp.step5": "In BIOS enable UEFI and Above 4G Decoding, disable Secure Boot and Resizable BAR.",
   "exp.step6": "Save the JSON report below — it will help with debugging and on forums.",

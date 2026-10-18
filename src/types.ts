@@ -89,10 +89,18 @@ export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Pr
 export interface SsdtEntry {
   name: string;
   file: string;
+  /** Имя файла в репозитории Dortania; пусто — автоскачивания нет */
+  repo_file: string;
   description: string;
   kind: string;
   url: string;
   selected: boolean;
+}
+
+export interface SsdtDlItem {
+  name: string;
+  file: string;
+  repo_file: string;
 }
 
 export interface KextDownloadItem {
@@ -117,6 +125,14 @@ export interface KextDlProgress {
   done: number;
   total: number;
   kext: string;
+}
+
+export interface SsdtsToEfiReport {
+  acpi_dir: string;
+  results: KextDlResult[];
+  config_path: string | null;
+  backup_made: boolean;
+  registered: number;
 }
 
 export interface UtbMapReport {

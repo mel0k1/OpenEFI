@@ -1,6 +1,6 @@
 [package]
 name = "openefi-core"
-version = "0.4.0"
+version = "0.5.0"
 description = "OpenEFI core: hardware detection, kext matching, SMBIOS"
 edition = "2024"
 
