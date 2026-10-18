@@ -612,6 +612,32 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // прогон вручную: нужны скачанные архивы в /tmp (см. worklog)
+    fn test_extract_real_zips_if_present() {
+        let cases = [
+            ("/tmp/lilu.zip", "Lilu.kext"),
+            ("/tmp/utb.zip", "UTBDefault.kext"),
+            ("/tmp/vsmc.zip", "SMCProcessor.kext"),
+        ];
+        for (file, expected) in cases {
+            let Ok(bytes) = std::fs::read(file) else { continue }; // файла нет — пропускаем
+            let tmp = std::env::temp_dir().join(format!("openefi-real-{}", std::process::id()));
+            std::fs::create_dir_all(&tmp).unwrap();
+            let installed = extract_kexts_from_zip(std::io::Cursor::new(&bytes), &tmp).unwrap();
+            assert!(
+                installed.iter().any(|b| b == expected),
+                "{file}: ожидался {expected}, получено {installed:?}"
+            );
+            assert!(
+                !installed.iter().any(|b| b.ends_with(".dSYM")),
+                "dSYM не должен ставиться: {installed:?}"
+            );
+            assert!(tmp.join(expected).join("Contents").exists());
+            std::fs::remove_dir_all(&tmp).ok();
+        }
+    }
+
+    #[test]
     #[ignore] // сетевой тест: запускается вручную
     fn test_network_fetch_lilu_release() {
         let agent = http_agent();
