@@ -4,6 +4,7 @@
 export const ru: Record<string, string> = {
   "app.step.welcome": "Начало",
   "app.step.hardware": "Железо",
+  "app.step.bios": "BIOS",
   "app.step.kexts": "Кексты",
   "app.step.smbios": "SMBIOS",
   "app.step.config": "Конфиг",
@@ -173,11 +174,100 @@ export const ru: Record<string, string> = {
   "set.language": "Язык",
   "set.langDesc": "Язык интерфейса приложения",
   "set.githubError": "Не удалось связаться с GitHub",
+
+  "bios.title": "Настройки BIOS / UEFI",
+  "bios.desc":
+    "Что включить и выключить перед установкой macOS. Список собран по гайду Dortania и подогнан под ваше железо.",
+  "bios.live.title": "Проверка текущей системы",
+  "bios.live.desc": "Пару настроек можно проверить прямо сейчас, не заходя в BIOS.",
+  "bios.live.check": "Проверить сейчас",
+  "bios.live.checking": "Проверяю…",
+  "bios.live.secureBoot": "Secure Boot",
+  "bios.live.bootMode": "Режим загрузки",
+  "bios.live.on": "включён",
+  "bios.live.off": "выключен",
+  "bios.live.uefi": "UEFI",
+  "bios.live.legacy": "Legacy (MBR)",
+  "bios.live.unknown": "неизвестно",
+  "bios.live.uefiOk": "UEFI-загрузка — то, что нужно",
+  "bios.live.legacyWarn":
+    "Система грузится в Legacy-режиме — macOS нужен чистый UEFI. Включите UEFI в BIOS и конвертируйте диск в GPT.",
+  "bios.live.secureOk": "Secure Boot выключен — отлично",
+  "bios.live.secureWarn": "Secure Boot включён — macOS не загрузится. Выключите его в BIOS.",
+  "bios.required": "Обязательные",
+  "bios.recommended": "Рекомендованные",
+  "bios.optional": "Опциональные",
+  "bios.action.enable": "Включить",
+  "bios.action.disable": "Выключить",
+  "bios.action.check": "Проверить",
+  "bios.hint":
+    "Названия пунктов различаются у прошивок AMI, Insyde, Phoenix — ищите по смыслу в разделах Advanced / Boot / Security.",
+  "bios.quirksHint":
+    "CFG Lock и VT-d можно не трогать: OpenCore компенсирует их кварками в config.plist.",
+
+  "bios.item.secure_boot.desc":
+    "macOS не загрузится с включённым Secure Boot — выключите в разделе Security/Boot.",
+  "bios.item.fast_boot.desc":
+    "Быстрая загрузка не инициализирует USB — установочная флешка может не увидеться.",
+  "bios.item.sata_ahci.desc": "Целевое значение — AHCI: в IDE/RST/RAID установщик не увидит диск.",
+  "bios.item.above_4g.desc":
+    "Открывает 64-битную адресацию памяти — без неё карты AMD Navi не дают загрузиться.",
+  "bios.item.csm.desc": "macOS требует чистый UEFI — отключите CSM/Legacy, оставьте «UEFI only».",
+  "bios.item.resize_bar.desc":
+    "Целевое значение — выключено: macOS не использует ReBAR, с AMD GPU возможны чёрные экраны.",
+  "bios.item.hyper_threading.desc":
+    "Многопоточность должна быть включена — macOS опирается на неё на Intel.",
+  "bios.item.sgx.desc": "Software Guard Extensions macOS не использует и спотыкается о них.",
+  "bios.item.vt_d.desc": "macOS не нужна аппаратная виртуализация ввода-вывода от Intel.",
+  "bios.item.txt.desc": "Trusted Execution macOS не нужен, иногда мешает загрузке.",
+  "bios.item.cfg_lock.desc":
+    "Запертый регистр MSR 0xE2 валит ядро при загрузке на Intel.",
+  "bios.item.vt_x.desc": "Пригодится для виртуалок внутри macOS; сама macOS его не требует.",
+  "bios.item.tpm_ptt.desc": "Целевое значение не критично — OpenCore игнорирует TPM.",
+  "bios.item.svm.desc": "Виртуализация AMD — пригодится для виртуалок внутри macOS.",
+  "bios.item.iommu.desc": "Целевое значение — выключено: мешает пробросу устройств в macOS.",
+  "bios.item.npb.desc": "NX-бит на AMD обязан быть включён — без него ядро падает при старте.",
+  "bios.item.dvmt.desc":
+    "Целевое значение — 64 МБ: маленький буфер ломает вывод iGPU на ноутбуках.",
+  "bios.item.xmp.desc": "Профиль памяти для производительности; на совместимость не влияет.",
+
+  "efia.title": "Защита EFI",
+  "efia.desc":
+    "Проверьте EFI-папку перед изменениями: увидите, что уже стоит, и убедитесь, что чужие загрузчики не пострадают.",
+  "efia.audit": "Проверить EFI-папку",
+  "efia.checking": "Проверяю…",
+  "efia.backup": "Сделать бэкап EFI/OC",
+  "efia.backingUp": "Бэкаплю…",
+  "efia.backupDone": "Бэкап готов: {path} ({n} файлов)",
+  "efia.backupErr": "Бэкап не сделан: {error}",
+  "efia.ocFound": "OpenCore установлен",
+  "efia.ocMissing": "OpenCore не найден",
+  "efia.ocDetails": "{k} кекстов · {a} ACPI-таблиц · config.plist: {cfg}",
+  "efia.yes": "есть",
+  "efia.no": "нет",
+  "efia.bootloaders": "Загрузчики на разделе",
+  "efia.noBootloaders": "Загрузчиков не найдено",
+  "efia.sharedBootx64":
+    "В EFI/Boot есть BOOTX64.EFI — fallback другой ОС. OpenEFI его не трогает.",
+  "efia.warnings": "Предупреждения",
+  "efia.kind.opencore": "OpenCore",
+  "efia.kind.clover": "Clover",
+  "efia.kind.windows": "Windows",
+  "efia.kind.linux": "Linux",
+  "efia.kind.refind": "rEFInd/rEFIt",
+  "efia.kind.other": "Другой загрузчик",
+  "efia.safe.title": "Что OpenEFI никогда не делает",
+  "efia.safe.1": "Не перезаписывает EFI/Boot/BOOTX64.EFI — это fallback-загрузчик Windows и Linux",
+  "efia.safe.2": "Не трогает EFI/Microsoft, EFI/CLOVER, EFI/ubuntu и другие чужие папки",
+  "efia.safe.3": "Пишет только в EFI/OC: Kexts, ACPI, config.plist",
+  "efia.safe.4":
+    "Перед установкой кекстов и SSDT автоматически снимает бэкап EFI/OC → EFI/OC.bak-openefi-<дата>",
 };
 
 export const en: Record<string, string> = {
   "app.step.welcome": "Start",
   "app.step.hardware": "Hardware",
+  "app.step.bios": "BIOS",
   "app.step.kexts": "Kexts",
   "app.step.smbios": "SMBIOS",
   "app.step.config": "Config",
@@ -347,4 +437,90 @@ export const en: Record<string, string> = {
   "set.language": "Language",
   "set.langDesc": "Application interface language",
   "set.githubError": "Could not reach GitHub",
+
+  "bios.title": "BIOS / UEFI settings",
+  "bios.desc":
+    "What to enable and disable before installing macOS. The list is built per the Dortania guide and adapted to your hardware.",
+  "bios.live.title": "Current system check",
+  "bios.live.desc": "A couple of settings can be checked right now without entering the BIOS.",
+  "bios.live.check": "Check now",
+  "bios.live.checking": "Checking…",
+  "bios.live.secureBoot": "Secure Boot",
+  "bios.live.bootMode": "Boot mode",
+  "bios.live.on": "enabled",
+  "bios.live.off": "disabled",
+  "bios.live.uefi": "UEFI",
+  "bios.live.legacy": "Legacy (MBR)",
+  "bios.live.unknown": "unknown",
+  "bios.live.uefiOk": "UEFI boot — exactly what’s needed",
+  "bios.live.legacyWarn":
+    "The system boots in Legacy mode — macOS needs pure UEFI. Enable UEFI boot in the BIOS and convert the disk to GPT.",
+  "bios.live.secureOk": "Secure Boot is off — great",
+  "bios.live.secureWarn": "Secure Boot is on — macOS will not boot. Disable it in the BIOS.",
+  "bios.required": "Required",
+  "bios.recommended": "Recommended",
+  "bios.optional": "Optional",
+  "bios.action.enable": "Enable",
+  "bios.action.disable": "Disable",
+  "bios.action.check": "Check",
+  "bios.hint":
+    "Option names differ between AMI, Insyde and Phoenix firmwares — look by meaning in the Advanced / Boot / Security sections.",
+  "bios.quirksHint":
+    "CFG Lock and VT-d can be left as-is: OpenCore compensates for them with quirks in config.plist.",
+
+  "bios.item.secure_boot.desc":
+    "macOS will not boot with Secure Boot enabled — turn it off under Security/Boot.",
+  "bios.item.fast_boot.desc":
+    "Fast Boot skips USB initialization — the installer USB stick may not be seen.",
+  "bios.item.sata_ahci.desc": "Target value is AHCI: the installer will not see the disk in IDE/RST/RAID mode.",
+  "bios.item.above_4g.desc":
+    "Enables 64-bit memory addressing — AMD Navi cards will not boot without it.",
+  "bios.item.csm.desc": "macOS requires pure UEFI — disable CSM/Legacy and keep “UEFI only”.",
+  "bios.item.resize_bar.desc":
+    "Target value is off: macOS does not use ReBAR, AMD GPUs may show a black screen.",
+  "bios.item.hyper_threading.desc": "Hyper-Threading must be on — macOS relies on it on Intel.",
+  "bios.item.sgx.desc": "Software Guard Extensions are unused by macOS and cause boot hiccups.",
+  "bios.item.vt_d.desc": "macOS does not need Intel I/O virtualization.",
+  "bios.item.txt.desc": "Trusted Execution is unneeded by macOS and sometimes interferes with booting.",
+  "bios.item.cfg_lock.desc": "A locked MSR 0xE2 register crashes the kernel on Intel.",
+  "bios.item.vt_x.desc": "Useful for VMs inside macOS; macOS itself does not require it.",
+  "bios.item.tpm_ptt.desc": "The value is not critical — OpenCore ignores TPM.",
+  "bios.item.svm.desc": "AMD virtualization — useful for VMs inside macOS.",
+  "bios.item.iommu.desc": "Target value is off: it interferes with device passthrough in macOS.",
+  "bios.item.npb.desc": "The NX bit must be enabled on AMD — otherwise the kernel crashes at boot.",
+  "bios.item.dvmt.desc":
+    "Target value is 64 MB: a small buffer breaks iGPU output on laptops.",
+  "bios.item.xmp.desc": "Memory performance profile; does not affect compatibility.",
+
+  "efia.title": "EFI protection",
+  "efia.desc":
+    "Inspect the EFI folder before changes: see what is already installed and make sure other bootloaders stay safe.",
+  "efia.audit": "Inspect EFI folder",
+  "efia.checking": "Checking…",
+  "efia.backup": "Back up EFI/OC",
+  "efia.backingUp": "Backing up…",
+  "efia.backupDone": "Backup ready: {path} ({n} files)",
+  "efia.backupErr": "Backup failed: {error}",
+  "efia.ocFound": "OpenCore installed",
+  "efia.ocMissing": "OpenCore not found",
+  "efia.ocDetails": "{k} kexts · {a} ACPI tables · config.plist: {cfg}",
+  "efia.yes": "present",
+  "efia.no": "missing",
+  "efia.bootloaders": "Bootloaders on the partition",
+  "efia.noBootloaders": "No bootloaders found",
+  "efia.sharedBootx64":
+    "EFI/Boot contains BOOTX64.EFI — another OS fallback. OpenEFI never touches it.",
+  "efia.warnings": "Warnings",
+  "efia.kind.opencore": "OpenCore",
+  "efia.kind.clover": "Clover",
+  "efia.kind.windows": "Windows",
+  "efia.kind.linux": "Linux",
+  "efia.kind.refind": "rEFInd/rEFIt",
+  "efia.kind.other": "Another bootloader",
+  "efia.safe.title": "What OpenEFI never does",
+  "efia.safe.1": "Does not overwrite EFI/Boot/BOOTX64.EFI — that is the Windows/Linux fallback loader",
+  "efia.safe.2": "Does not touch EFI/Microsoft, EFI/CLOVER, EFI/ubuntu or other foreign folders",
+  "efia.safe.3": "Writes only inside EFI/OC: Kexts, ACPI, config.plist",
+  "efia.safe.4":
+    "Before every kext/SSDT install it automatically backs up EFI/OC → EFI/OC.bak-openefi-<date>",
 };

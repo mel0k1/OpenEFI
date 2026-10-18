@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { WelcomeStep } from "@/components/steps/WelcomeStep";
 import { HardwareStep } from "@/components/steps/HardwareStep";
+import { BiosStep } from "@/components/steps/BiosStep";
 import { KextsStep } from "@/components/steps/KextsStep";
 import { SmbiosStep } from "@/components/steps/SmbiosStep";
 import { ConfigStep } from "@/components/steps/ConfigStep";
@@ -20,6 +21,7 @@ import { ExportStep } from "@/components/steps/ExportStep";
 const STEP_KEYS = [
   "app.step.welcome",
   "app.step.hardware",
+  "app.step.bios",
   "app.step.kexts",
   "app.step.smbios",
   "app.step.config",
@@ -142,10 +144,11 @@ function AppInner() {
               onDarwinChange={changeDarwin}
             />
           )}
-          {step === 2 && (
+          {step === 2 && report && <BiosStep report={report} />}
+          {step === 3 && (
             <KextsStep kexts={kexts} onToggle={toggleKext} darwin={darwin} />
           )}
-          {step === 3 && report && (
+          {step === 4 && report && (
             <SmbiosStep
               report={report}
               darwin={darwin}
@@ -156,7 +159,7 @@ function AppInner() {
               onData={setSmbiosData}
             />
           )}
-          {step === 4 && (
+          {step === 5 && (
             <ConfigStep
               report={report!}
               ssdts={ssdts}
@@ -166,7 +169,7 @@ function AppInner() {
               darwin={darwin}
             />
           )}
-          {step === 5 && report && (
+          {step === 6 && report && (
             <ExportStep
               report={report}
               kexts={kexts.filter((k) => k.selected)}
@@ -203,8 +206,8 @@ function AppInner() {
             </span>
           )}
         </div>
-        {step < 5 ? (
-          <Button disabled={!canNext} onClick={() => setStep((s) => Math.min(5, s + 1))}>
+        {step < 6 ? (
+          <Button disabled={!canNext} onClick={() => setStep((s) => Math.min(6, s + 1))}>
             {t("app.next")}
           </Button>
         ) : (

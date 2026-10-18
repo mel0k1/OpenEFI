@@ -42,6 +42,12 @@ pub struct KextsToEfiReport {
     /// Каталог, куда легли кексты (например «/Volumes/EFI/EFI/OC/Kexts»)
     pub kexts_dir: String,
     pub results: Vec<KextDownloadResult>,
+    /// Куда сделан автоматический бэкап EFI/OC перед изменениями
+    #[serde(default)]
+    pub backup_path: Option<String>,
+    /// Предупреждения защиты EFI (нет OpenCore, не похоже на ESP и т.п.)
+    #[serde(default)]
+    pub audit_warnings: Vec<String>,
 }
 
 /// Прогресс: сколько кектов обработано из скольких
@@ -446,6 +452,7 @@ pub fn download_kexts(
     mut progress: impl FnMut(DownloadProgress),
 ) -> Result<KextsToEfiReport, String> {
     let efi_base = resolve_efi_base(selected_dir);
+    let (backup_path, audit_warnings) = efi_safety(&efi_base);
     let kexts_dir = efi_base.join("OC").join("Kexts");
     std::fs::create_dir_all(&kexts_dir).map_err(|e| {
         format!(
@@ -572,6 +579,8 @@ pub fn download_kexts(
     Ok(KextsToEfiReport {
         kexts_dir: kexts_dir.to_string_lossy().to_string(),
         results,
+        backup_path,
+        audit_warnings,
     })
 }
 
@@ -597,6 +606,27 @@ pub struct SsdtsToEfiReport {
     pub backup_made: bool,
     /// Сколько таблиц включено/добавлено в ACPI/Add
     pub registered: usize,
+    /// Куда сделан автоматический бэкап EFI/OC перед изменениями
+    #[serde(default)]
+    pub backup_path: Option<String>,
+    /// Предупреждения защиты EFI (нет OpenCore, не похоже на ESP и т.п.)
+    #[serde(default)]
+    pub audit_warnings: Vec<String>,
+}
+
+/// Перед любыми записями в EFI: предупреждения аудита + полный бэкап EFI/OC,
+/// если OpenCore уже установлен. Никогда не завершаемся ошибкой из-за бэкапа —
+/// только добавляем предупреждение в отчёт.
+fn efi_safety(efi_base: &Path) -> (Option<String>, Vec<String>) {
+    let mut warnings = crate::efiprotect::audit_warnings(efi_base);
+    let mut backup_path = None;
+    if efi_base.join("OC").is_dir() {
+        match crate::efiprotect::backup_oc(efi_base) {
+            Ok(rep) => backup_path = Some(rep.backup_path),
+            Err(e) => warnings.insert(0, format!("бэкап EFI/OC не сделан: {e}")),
+        }
+    }
+    (backup_path, warnings)
 }
 
 /// Включить существующие и добавить недостающие записи ACPI/Add
@@ -679,6 +709,7 @@ pub fn download_ssdts(
     mut progress: impl FnMut(DownloadProgress),
 ) -> Result<SsdtsToEfiReport, String> {
     let efi_base = resolve_efi_base(selected_dir);
+    let (backup_path, audit_warnings) = efi_safety(&efi_base);
     let acpi_dir = efi_base.join("OC").join("ACPI");
     std::fs::create_dir_all(&acpi_dir).map_err(|e| {
         format!(
@@ -755,6 +786,8 @@ pub fn download_ssdts(
         config_path,
         backup_made,
         registered,
+        backup_path,
+        audit_warnings,
     })
 }
 

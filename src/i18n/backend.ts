@@ -207,6 +207,58 @@ export const BACKEND_EN: Record<string, string> = {
   "недопустимый путь": "invalid path",
   "недопустимый путь к папке": "invalid folder path",
   "недопустимый путь к кексту": "invalid kext path",
+
+  // --- BIOS-чеклист: заметки ---
+  "Должен быть режим AHCI — IDE/RST/RAID сломает обнаружение диска установщиком":
+    "Must be AHCI — IDE/RST/RAID breaks disk detection for the installer",
+  "На разных платах встречается как «Above 4G Memory» или «Mining Mode» — нужен для загрузки с AMD GPU":
+    "Listed as “Above 4G Memory” or “Mining Mode” on some boards — required for AMD GPU boot",
+  "macOS грузится только в чистом UEFI; если после выключения CSM диск пропал из списка загрузки — включите «Boot mode: UEFI only»":
+    "macOS boots in pure UEFI only; if the disk disappears from the boot menu after disabling CSM — set “Boot mode: UEFI only”",
+  "Navi 10 и старее (Polaris/Vega/Navi 10) не стартуют с включённым ReBAR":
+    "Navi 10 and older (Polaris/Vega/Navi 10) will not boot with ReBAR enabled",
+  "Для RX 6000 с кекстом NootRX ReBAR должен быть ВКЛЮЧЁН; с WhateverGreen — выключен":
+    "For RX 6000 with the NootRX kext ReBAR must be ON; with WhateverGreen — OFF",
+  "Не критично, но macOS не использует ReBAR — выключите, если возникнут артефакты":
+    "Not critical, but macOS does not use ReBAR — disable it if you see artifacts",
+  "На поколениях без SGX пункта не будет — просто пропустите":
+    "Generations without SGX simply lack this option — skip it",
+  "Если выключать не хотите — OpenCore умеет DisableIoMapper; на AMD этого пункта нет":
+    "If you prefer to keep it on — OpenCore compensates with DisableIoMapper; AMD has no such option",
+  "Часто спрятан в расширенном меню BIOS; если не найти — OpenCore компенсирует кварками AppleCpuPmCfgLock/AppleXcpmCfgLock":
+    "Often hidden in the advanced BIOS menu; if missing — OpenCore compensates with the AppleCpuPmCfgLock/AppleXcpmCfgLock quirks",
+  "macOS сам VT-x не использует, но пригодится для виртуалок; выключенным оставлять нет смысла":
+    "macOS does not need VT-x itself, but VMs do — no reason to keep it off",
+  "OpenCore TPM игнорирует; если Windows 11 стоит на том же ПК — не трогайте, иначе она перестанет загружаться":
+    "OpenCore ignores TPM; if Windows 11 is installed on the same PC — do not touch it, or it will stop booting",
+  "Или оставьте включённым — тогда AMD-конфиг должен содержать DisableIoMapper=true":
+    "Or keep it enabled — then the AMD config must contain DisableIoMapper=true",
+  "На AMD обязателен включённый NX — иначе ядро macOS падает при старте":
+    "NX must be enabled on AMD — otherwise the macOS kernel crashes at boot",
+  "Нужно 64 МБ под iGPU; часто спрятан — на некоторых ноутбуках правится только через мод BIOS/UEFI":
+    "Needs 64 MB for the iGPU; often hidden — on some laptops it can only be changed with a BIOS mod",
+  "Профиль памяти для производительности; на совместимость macOS не влияет":
+    "Memory performance profile; has no effect on macOS compatibility",
+
+  // --- BIOS: живая проверка ---
+  "живая проверка доступна только на Windows и Linux":
+    "live check is only available on Windows and Linux",
+  "Secure Boot не удалось прочитать — нужны права администратора или система грузится в Legacy-режиме":
+    "could not read Secure Boot — administrator rights required, or the system boots in Legacy mode",
+  "efivars недоступны — Secure Boot прочитать не удалось":
+    "efivars unavailable — could not read Secure Boot",
+
+  // --- Защита EFI: аудит и бэкап ---
+  "в выбранной папке нет каталога EFI — возможно, выбран не тот диск":
+    "no EFI directory in the selected folder — the wrong disk may have been picked",
+  "выбранная папка не похожа на EFI-раздел":
+    "the selected folder does not look like an EFI system partition",
+  "OpenCore не найден в EFI/OC — кексты положить можно, но загрузчик придётся установить отдельно (OpenCorePkg)":
+    "OpenCore not found in EFI/OC — kexts can be placed, but the bootloader must be installed separately (OpenCorePkg)",
+  "в EFI/Boot лежит BOOTX64.EFI чужого загрузчика — OpenEFI никогда не перезаписывает этот файл":
+    "EFI/Boot contains a foreign BOOTX64.EFI — OpenEFI never overwrites this file",
+  "OpenCore не найден в EFI/OC — бэкапить нечего":
+    "OpenCore not found in EFI/OC — nothing to back up",
 };
 
 // Динамические строки бэкенда: подстановки вида "AMD {codename}: серверная SMBIOS"
@@ -235,4 +287,5 @@ export const BACKEND_PATTERNS: [RegExp, string][] = [
   [/^не создать (.+): (.+)$/, "cannot create $1: $2"],
   [/^не сериализовать (.+): (.+)$/, "cannot serialize $1: $2"],
   [/^(.+) — не словарь plist$/, "$1 is not a plist dictionary"],
+  [/^бэкап EFI\/OC не сделан: (.+)$/, "EFI/OC backup failed: $1"],
 ];

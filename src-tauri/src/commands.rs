@@ -8,6 +8,60 @@ pub fn scan_hardware() -> Result<HardwareReport, String> {
     Ok(openefi_core::hardware::scan())
 }
 
+/// Матрица настроек BIOS/UEFI под железо пользователя
+#[tauri::command]
+pub fn bios_checklist(report: HardwareReport) -> openefi_core::bios::BiosChecklist {
+    openefi_core::bios::checklist(&report)
+}
+
+/// Живая проверка Secure Boot и режима загрузки (Windows/Linux)
+#[tauri::command]
+pub fn bios_live_status() -> openefi_core::bios::BiosStatus {
+    openefi_core::bios::live_status()
+}
+
+/// Аудит EFI-папки: чужие загрузчики, состояние OpenCore, предупреждения
+#[tauri::command]
+pub fn audit_efi_folder(window: tauri::WebviewWindow) -> Result<openefi_core::efiprotect::EfiAudit, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked = DialogExt::dialog(&window)
+        .file()
+        .set_title("Выберите EFI-папку или диск с EFI для проверки")
+        .blocking_pick_folder();
+
+    let Some(picked) = picked else {
+        return Err("Выбор папки отменён".into());
+    };
+    let base = picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь к папке")?;
+
+    Ok(openefi_core::efiprotect::audit(&base))
+}
+
+/// Ручной полный бэкап EFI/OC → EFI/OC.bak-openefi-<метка времени>
+#[tauri::command]
+pub fn backup_efi_folder(window: tauri::WebviewWindow) -> Result<openefi_core::efiprotect::BackupReport, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let picked = DialogExt::dialog(&window)
+        .file()
+        .set_title("Выберите EFI-папку или диск с EFI для бэкапа")
+        .blocking_pick_folder();
+
+    let Some(picked) = picked else {
+        return Err("Выбор папки отменён".into());
+    };
+    let base = picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or("недопустимый путь к папке")?;
+
+    openefi_core::efiprotect::backup_oc(&base)
+}
+
 #[tauri::command]
 pub fn macos_versions(max_darwin: u32) -> Vec<macos::MacosVersion> {
     macos::build_version_list(max_darwin)

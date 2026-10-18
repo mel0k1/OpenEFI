@@ -119,6 +119,8 @@ export interface KextDlResult {
 export interface KextsToEfiReport {
   kexts_dir: string;
   results: KextDlResult[];
+  backup_path?: string | null;
+  audit_warnings?: string[];
 }
 
 export interface KextDlProgress {
@@ -133,6 +135,8 @@ export interface SsdtsToEfiReport {
   config_path: string | null;
   backup_made: boolean;
   registered: number;
+  backup_path?: string | null;
+  audit_warnings?: string[];
 }
 
 export interface UtbMapReport {
@@ -141,4 +145,56 @@ export interface UtbMapReport {
   backup_made: boolean;
   utbmap_registered: boolean;
   utbdefault_disabled: boolean;
+}
+
+// --- BIOS-чеклист ---
+
+export interface BiosItem {
+  id: string;
+  /** Название пункта в реальном BIOS (не переводится) */
+  option: string;
+  /** enable | disable | check */
+  action: "enable" | "disable" | "check";
+  /** required | recommended | optional */
+  priority: "required" | "recommended" | "optional";
+  applies: boolean;
+  note: string | null;
+}
+
+export interface BiosChecklist {
+  items: BiosItem[];
+}
+
+export interface BiosStatus {
+  secure_boot: boolean | null;
+  /** "uefi" | "legacy" */
+  boot_mode: string | null;
+  notes: string[];
+}
+
+// --- Защита EFI ---
+
+export interface BootloaderEntry {
+  name: string;
+  path: string;
+  /** opencore | clover | windows | linux | refind | other */
+  kind: string;
+}
+
+export interface EfiAudit {
+  efi_dir: string;
+  found: boolean;
+  looks_like_esp: boolean;
+  opencore: boolean;
+  kexts_count: number;
+  acpi_count: number;
+  has_config: boolean;
+  bootloaders: BootloaderEntry[];
+  shared_bootx64: boolean;
+  warnings: string[];
+}
+
+export interface EfiBackupReport {
+  backup_path: string;
+  files: number;
 }

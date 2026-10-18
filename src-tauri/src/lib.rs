@@ -7,6 +7,10 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::scan_hardware,
+            commands::bios_checklist,
+            commands::bios_live_status,
+            commands::audit_efi_folder,
+            commands::backup_efi_folder,
             commands::macos_versions,
             commands::compute_max_darwin,
             commands::match_kexts,
