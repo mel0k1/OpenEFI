@@ -5,22 +5,34 @@ import {
   HardDriveDownload,
   Loader2,
   PackageCheck,
+  Search,
 } from "lucide-react";
 import { listen } from "@tauri-apps/api/event";
-import type { FullEfiProgress, FullEfiReport } from "@/types";
+import type { FullEfiProgress, FullEfiReport, OpenCoreStatus } from "@/types";
 import { invoke } from "@/types";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 type Phase = "idle" | "running" | "done";
 
-export function FullEfiBuildCard() {
+interface Props {
+  /** Найденная ESP-база из детектора (undefined — диалог выбора папки) */
+  base?: string | null;
+}
+
+export function FullEfiBuildCard({ base }: Props) {
   const { t, tb } = useI18n();
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<FullEfiProgress | null>(null);
   const [report, setReport] = useState<FullEfiReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tools, setTools] = useState(false);
+  const [audioDxe, setAudioDxe] = useState(false);
+  const [status, setStatus] = useState<OpenCoreStatus | null>(null);
+  const [statusChecking, setStatusChecking] = useState(false);
 
   useEffect(() => {
     const un = listen<FullEfiProgress>("fullefi-progress", (e) => setProgress(e.payload));
@@ -35,7 +47,11 @@ export function FullEfiBuildCard() {
     setError(null);
     setProgress({ stage: "prepare", message: "", percent: 0 });
     try {
-      const r = await invoke<FullEfiReport>("build_full_efi_to_efi");
+      const r = await invoke<FullEfiReport>("build_full_efi_to_efi", {
+        base: base ?? undefined,
+        tools,
+        audioDxe,
+      });
       setReport(r);
       setPhase("done");
     } catch (e) {
@@ -48,11 +64,70 @@ export function FullEfiBuildCard() {
     }
   };
 
+  const checkStatus = async () => {
+    setStatusChecking(true);
+    setError(null);
+    setStatus(null);
+    try {
+      setStatus(await invoke<OpenCoreStatus>("opencore_status", { base: base ?? undefined }));
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes("отменён")) setError(msg);
+    } finally {
+      setStatusChecking(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-start gap-2">
         <HardDriveDownload className="text-muted-foreground mt-0.5 size-4 shrink-0" />
         <p className="text-muted-foreground text-xs leading-relaxed">{t("fullefi.desc")}</p>
+      </div>
+
+      {/* Состояние установленного OpenCore */}
+      <div className="space-y-2 rounded-lg border p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={checkStatus} disabled={statusChecking} className="gap-2">
+            {statusChecking ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Search className="size-3.5" />
+            )}
+            {statusChecking ? t("fullefi.statusChecking") : t("fullefi.statusCheck")}
+          </Button>
+          <span className="text-muted-foreground text-xs">{t("fullefi.statusTitle")}</span>
+        </div>
+        {status && (
+          <div className="text-xs leading-relaxed">
+            {!status.installed ? (
+              <span className="text-muted-foreground">{t("fullefi.notInstalled")}</span>
+            ) : status.version && status.latest ? (
+              <span className={status.version === status.latest ? "text-[var(--success)]" : "text-amber-600 dark:text-amber-400"}>
+                {t("fullefi.installedVersion", { v: status.version, latest: status.latest })}
+              </span>
+            ) : (
+              <span className="text-muted-foreground">{t("fullefi.installedUnknown")}</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Опциональные компоненты */}
+      <div className="space-y-2 rounded-lg border p-3">
+        <div className="text-xs font-medium">{t("fullefi.options")}</div>
+        <div className="flex items-start gap-2">
+          <Checkbox id="fullefi-tools" checked={tools} onCheckedChange={(v) => setTools(v === true)} />
+          <Label htmlFor="fullefi-tools" className="text-xs leading-relaxed font-normal">
+            {t("fullefi.tools")}
+          </Label>
+        </div>
+        <div className="flex items-start gap-2">
+          <Checkbox id="fullefi-audio" checked={audioDxe} onCheckedChange={(v) => setAudioDxe(v === true)} />
+          <Label htmlFor="fullefi-audio" className="text-xs leading-relaxed font-normal">
+            {t("fullefi.audio")}
+          </Label>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -89,7 +164,14 @@ export function FullEfiBuildCard() {
             <PackageCheck className="mt-0.5 size-4 shrink-0" />
             <div className="min-w-0 space-y-1 text-xs leading-relaxed">
               <div className="font-medium">
-                {t("fullefi.done", { version: report.opencore_version ?? "?" })}
+                {report.was_up_to_date === true
+                  ? t("fullefi.wasUpToDate", { v: report.opencore_version ?? "?" })
+                  : report.previous_version && report.previous_version !== report.opencore_version
+                    ? t("fullefi.updatedFrom", {
+                        old: report.previous_version,
+                        new: report.opencore_version ?? "?",
+                      })
+                    : t("fullefi.done", { version: report.opencore_version ?? "?" })}
               </div>
               <div className="text-muted-foreground break-all">{tb(report.efi_dir)}</div>
               <div className="flex flex-wrap gap-1 pt-1">
@@ -115,6 +197,12 @@ export function FullEfiBuildCard() {
                 {report.resources_installed.length > 0 &&
                   ` · ${t("fullefi.resources", { dirs: report.resources_installed.join(", ") })}`}
               </div>
+              {(report.tools_installed?.length ?? 0) > 0 && (
+                <div>
+                  {t("fullefi.toolsInstalled", { n: report.tools_installed!.join(", ") })}
+                </div>
+              )}
+              {report.audio_installed && <div>{t("fullefi.audioInstalled")}</div>}
               {report.config_backup && (
                 <div className="text-muted-foreground break-all">
                   {t("fullefi.configBackup", { path: report.config_path ?? "" })}

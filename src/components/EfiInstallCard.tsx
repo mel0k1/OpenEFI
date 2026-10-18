@@ -15,11 +15,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 interface Props {
   kexts: KextEntry[];
   darwin: number;
+  /** Найденная ESP-база из детектора (undefined — диалог выбора папки) */
+  base?: string | null;
 }
 
 type Phase = "idle" | "running" | "done";
 
-export function EfiInstallCard({ kexts, darwin }: Props) {
+export function EfiInstallCard({ kexts, darwin, base }: Props) {
   const { t, tb } = useI18n();
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<KextDlProgress | null>(null);
@@ -46,6 +48,7 @@ export function EfiInstallCard({ kexts, darwin }: Props) {
       const r = await invoke<KextsToEfiReport>("download_kexts_to_efi", {
         kexts: installable.map((k) => ({ name: k.name, repo: k.repo })),
         darwin,
+        base: base ?? undefined,
       });
       setReport(r);
       setPhase("done");

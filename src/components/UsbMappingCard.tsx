@@ -8,7 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 
 type ToolTarget = "windows" | "macos";
 
-export function UsbMappingCard() {
+interface Props {
+  /** Найденная ESP-база из детектора (undefined — диалог выбора папки) */
+  base?: string | null;
+}
+
+export function UsbMappingCard({ base }: Props) {
   const { t } = useI18n();
   const [toolBusy, setToolBusy] = useState<ToolTarget | null>(null);
   const [toolPath, setToolPath] = useState<string | null>(null);
@@ -36,7 +41,7 @@ export function UsbMappingCard() {
     setAdding(true);
     setError(null);
     try {
-      const r = await invoke<UtbMapReport>("install_utbmap_to_efi");
+      const r = await invoke<UtbMapReport>("install_utbmap_to_efi", { base: base ?? undefined });
       setReport(r);
     } catch (e) {
       const msg = String(e);

@@ -2,7 +2,15 @@ import { useCallback, useEffect, useState } from "react";
 import { CpuIcon, HardDrive, MemoryStick, MonitorSmartphone, Settings } from "lucide-react";
 import appIcon from "@/assets/openefi-icon.png";
 import { invoke } from "@/types";
-import type { HardwareReport, KextEntry, MacosVersion, SmbiosData, SmbiosRecommendation, SsdtEntry } from "@/types";
+import type {
+  Compensations,
+  HardwareReport,
+  KextEntry,
+  MacosVersion,
+  SmbiosData,
+  SmbiosRecommendation,
+  SsdtEntry,
+} from "@/types";
 import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/i18n";
 import { LangProvider } from "@/i18n";
@@ -41,6 +49,10 @@ function AppInner() {
   const [smbiosModel, setSmbiosModel] = useState<string>("");
   const [smbiosData, setSmbiosData] = useState<SmbiosData | null>(null);
   const [ssdts, setSsdts] = useState<SsdtEntry[]>([]);
+  /** Компенсации BIOS: не выключенные в BIOS пункты → кварки в config.plist */
+  const [compensations, setCompensations] = useState<Compensations>({ cfg_lock: false, vtd: false });
+  /** Найденная ESP-база (том/EFI) — подставляется во все EFI-карточки */
+  const [efiBase, setEfiBase] = useState<string | null>(null);
 
   const scan = useCallback(async () => {
     setScanning(true);
@@ -144,9 +156,17 @@ function AppInner() {
               onDarwinChange={changeDarwin}
             />
           )}
-          {step === 2 && report && <BiosStep report={report} />}
+          {step === 2 && report && (
+            <BiosStep
+              report={report}
+              compensations={compensations}
+              onCompensation={(key, value) =>
+                setCompensations((prev) => ({ ...prev, [key]: value }))
+              }
+            />
+          )}
           {step === 3 && (
-            <KextsStep kexts={kexts} onToggle={toggleKext} darwin={darwin} />
+            <KextsStep kexts={kexts} onToggle={toggleKext} darwin={darwin} base={efiBase} />
           )}
           {step === 4 && report && (
             <SmbiosStep
@@ -167,6 +187,8 @@ function AppInner() {
               kexts={kexts}
               smbios={smbiosData}
               darwin={darwin}
+              compensations={compensations}
+              base={efiBase}
             />
           )}
           {step === 6 && report && (
@@ -175,6 +197,8 @@ function AppInner() {
               kexts={kexts.filter((k) => k.selected)}
               smbios={smbiosData}
               darwin={darwin}
+              base={efiBase}
+              onBase={setEfiBase}
             />
           )}
         </div>

@@ -9,22 +9,27 @@ import {
   Search,
   ShieldCheck,
   TriangleAlert,
+  Wrench,
   X,
 } from "lucide-react";
-import type { BiosChecklist, BiosItem, BiosStatus, HardwareReport } from "@/types";
+import type { BiosChecklist, BiosItem, BiosStatus, Compensations, HardwareReport } from "@/types";
 import { invoke } from "@/types";
 import { useI18n } from "@/i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 
 interface Props {
   report: HardwareReport;
+  compensations: Compensations;
+  onCompensation: (key: "cfg_lock" | "vtd", value: boolean) => void;
 }
 
 type Group = "required" | "recommended" | "optional";
 
-export function BiosStep({ report }: Props) {
+export function BiosStep({ report, compensations, onCompensation }: Props) {
   const { t, tb } = useI18n();
   const [checklist, setChecklist] = useState<BiosChecklist | null>(null);
   const [status, setStatus] = useState<BiosStatus | null>(null);
@@ -69,6 +74,51 @@ export function BiosStep({ report }: Props) {
     </Badge>
   );
 
+  /** Кварковые компенсации под пункт BIOS: не нашёл CFG Lock / оставил VT-d */
+  const compensationFor = (id: string): "cfg_lock" | "vtd" | null => {
+    if (id === "cfg_lock") return "cfg_lock";
+    if (id === "vt_d" || id === "iommu") return "vtd";
+    return null;
+  };
+
+  const renderCompensation = (item: BiosItem) => {
+    const key = compensationFor(item.id);
+    if (!key) return null;
+    const i18nKey = key === "cfg_lock" ? "cfgLock" : "vtd";
+    const active = compensations[key];
+    return (
+      <div
+        className={`mt-2 flex items-start gap-2.5 rounded-lg border p-2.5 ${
+          active ? "border-primary/50 bg-primary/5" : ""
+        }`}
+      >
+        <Checkbox
+          id={`comp-${item.id}`}
+          checked={active}
+          onCheckedChange={(v) => onCompensation(key, v === true)}
+        />
+        <div className="min-w-0 flex-1">
+          <Label
+            htmlFor={`comp-${item.id}`}
+            className="flex items-center gap-1.5 text-xs font-medium"
+          >
+            <Wrench className="text-primary size-3 shrink-0" />
+            {t(`bios.compensate.${i18nKey}.title`)}
+          </Label>
+          <p className="text-muted-foreground mt-0.5 text-xs leading-relaxed">
+            {t(`bios.compensate.${i18nKey}.desc`)}
+          </p>
+          {active && (
+            <p className="text-primary mt-1 flex items-center gap-1 text-xs font-medium">
+              <CircleCheck className="size-3 shrink-0" />
+              {t(`bios.compensate.${i18nKey}.on`)}
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderItem = (item: BiosItem) => (
     <div key={item.id} className="flex items-start gap-3 border-b py-2.5 last:border-0">
       <div className="mt-0.5 shrink-0">
@@ -95,6 +145,7 @@ export function BiosStep({ report }: Props) {
             {tb(item.note)}
           </div>
         )}
+        {renderCompensation(item)}
       </div>
     </div>
   );

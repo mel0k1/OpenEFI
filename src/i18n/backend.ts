@@ -292,6 +292,22 @@ export const BACKEND_EN: Record<string, string> = {
   "GitHub не вернул Location для releases/latest":
     "GitHub did not return a Location header for releases/latest",
   "нет связи с GitHub (OpenCorePkg)": "no connection to GitHub (OpenCorePkg)",
+
+  // --- Компенсации, аудит конфига, обновления кекстов, ESP, AudioDxe/Tools ---
+  "репозиторий не указан — обновляйте вручную": "repository not listed — update manually",
+  "неизвестный OpenEFI кекст — обновляйте вручную": "kext unknown to OpenEFI — update manually",
+  "в релизе нет подходящего архива — сверяйте вручную": "no matching archive in the release — check manually",
+  "в EFI/OC нет папки Kexts — сначала установите OpenCore и кексты":
+    "EFI/OC has no Kexts folder — install OpenCore and kexts first",
+  "найденный EFI-раздел недоступен — выберите папку вручную":
+    "the detected EFI partition is not accessible — pick the folder manually",
+  "config.plist не найден — OpenShell скопирован, но не зарегистрирован в Misc → Tools":
+    "config.plist not found — OpenShell was copied but not registered in Misc → Tools",
+  "HfsPlus уже установлен — OcBinaryData пропущен": "HfsPlus already installed — OcBinaryData skipped",
+  "не удалось назначить букву EFI-разделу — запустите OpenEFI от имени администратора":
+    "could not assign a drive letter to the EFI partition — run OpenEFI as administrator",
+  "udisksctl не найден — смонтируйте EFI-раздел вручную (например, sudo mount)":
+    "udisksctl not found — mount the EFI partition manually (e.g. sudo mount)",
 };
 
 // Динамические строки бэкенда: подстановки вида "AMD {codename}: серверная SMBIOS"
@@ -329,4 +345,12 @@ export const BACKEND_PATTERNS: [RegExp, string][] = [
   [/^config\.plist есть, но драйверы не зарегистрированы — включите их сами в UEFI → Drivers: (.+)$/,
     "config.plist found, but drivers were not registered — enable them yourself in UEFI → Drivers: $1"],
   [/^не создать скачанный архив: (.+)$/, "cannot open the downloaded archive: $1"],
+  [/^OpenShell не установлен: (.+)$/, "OpenShell was not installed: $1"],
+  [/^AudioDxe не установлен: (.+)$/, "AudioDxe was not installed: $1"],
+  [/^Tools не зарегистрированы в Misc → Tools — включите их сами: (.+)$/,
+    "Tools were not registered in Misc → Tools — enable them yourself: $1"],
+  [/^AudioSupport не включён — звук в пикере заработает после ручной правки UEFI → Audio: (.+)$/,
+    "AudioSupport was not enabled — picker sound will work after a manual UEFI → Audio edit: $1"],
+  [/^не смонтировать (.+): (.+)$/, "cannot mount $1: $2 — try mounting it manually"],
+  [/^не смонтировать (.+)$/, "cannot mount $1"],
 ];

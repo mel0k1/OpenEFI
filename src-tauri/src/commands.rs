@@ -2,6 +2,34 @@ use openefi_core::hardware::HardwareReport;
 use openefi_core::kexts::KextEntry;
 use openefi_core::macos;
 use openefi_core::smbios::{self, SmbiosData, SmbiosRecommendation};
+use openefi_core::config::Compensations;
+
+use std::path::PathBuf;
+use tauri::WebviewWindow;
+
+/// База EFI: явный путь (найденный ESP) или диалог выбора папки
+fn resolve_base(window: &WebviewWindow, base: Option<String>, title: &str) -> Result<PathBuf, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    if let Some(b) = base {
+        let p = PathBuf::from(b);
+        if p.is_dir() {
+            return Ok(p);
+        }
+        return Err("найденный EFI-раздел недоступен — выберите папку вручную".into());
+    }
+    let picked = DialogExt::dialog(window)
+        .file()
+        .set_title(title)
+        .blocking_pick_folder();
+    let Some(picked) = picked else {
+        return Err("Выбор папки отменён".into());
+    };
+    picked
+        .as_path()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "недопустимый путь к папке".into())
+}
 
 #[tauri::command]
 pub fn scan_hardware() -> Result<HardwareReport, String> {
@@ -22,44 +50,68 @@ pub fn bios_live_status() -> openefi_core::bios::BiosStatus {
 
 /// Аудит EFI-папки: чужие загрузчики, состояние OpenCore, предупреждения
 #[tauri::command]
-pub fn audit_efi_folder(window: tauri::WebviewWindow) -> Result<openefi_core::efiprotect::EfiAudit, String> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let picked = DialogExt::dialog(&window)
-        .file()
-        .set_title("Выберите EFI-папку или диск с EFI для проверки")
-        .blocking_pick_folder();
-
-    let Some(picked) = picked else {
-        return Err("Выбор папки отменён".into());
-    };
-    let base = picked
-        .as_path()
-        .map(|p| p.to_path_buf())
-        .ok_or("недопустимый путь к папке")?;
-
+pub fn audit_efi_folder(window: tauri::WebviewWindow, base: Option<String>) -> Result<openefi_core::efiprotect::EfiAudit, String> {
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI для проверки")?;
     Ok(openefi_core::efiprotect::audit(&base))
 }
 
 /// Ручной полный бэкап EFI/OC → EFI/OC.bak-openefi-<метка времени>
 #[tauri::command]
-pub fn backup_efi_folder(window: tauri::WebviewWindow) -> Result<openefi_core::efiprotect::BackupReport, String> {
-    use tauri_plugin_dialog::DialogExt;
-
-    let picked = DialogExt::dialog(&window)
-        .file()
-        .set_title("Выберите EFI-папку или диск с EFI для бэкапа")
-        .blocking_pick_folder();
-
-    let Some(picked) = picked else {
-        return Err("Выбор папки отменён".into());
-    };
-    let base = picked
-        .as_path()
-        .map(|p| p.to_path_buf())
-        .ok_or("недопустимый путь к папке")?;
-
+pub fn backup_efi_folder(window: tauri::WebviewWindow, base: Option<String>) -> Result<openefi_core::efiprotect::BackupReport, String> {
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI для бэкапа")?;
     openefi_core::efiprotect::backup_oc(&base)
+}
+
+/// Аудит существующего config.plist: Kernel/Add и ACPI/Add против файлов на диске
+#[tauri::command]
+pub fn audit_config_plist(window: tauri::WebviewWindow, base: Option<String>) -> Result<openefi_core::configaudit::ConfigAudit, String> {
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI для проверки config.plist")?;
+    openefi_core::configaudit::audit_config(&base)
+}
+
+/// Установленные кекты + проверка обновлений на GitHub
+#[tauri::command]
+pub fn check_kext_updates(window: tauri::WebviewWindow, base: Option<String>) -> Result<openefi_core::kextupdate::KextUpdatesReport, String> {
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI для проверки обновлений кекстов")?;
+    let installed = openefi_core::kextupdate::scan_installed(&base)?;
+    let checks = openefi_core::kextupdate::check_updates(&installed);
+    Ok(openefi_core::kextupdate::KextUpdatesReport { installed, checks })
+}
+
+/// Обновить выбранные устаревшие кекты тем же конвейером, что и установка
+#[tauri::command]
+pub fn update_outdated_kexts(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    base: Option<String>,
+    bundles: Vec<String>,
+    darwin: u32,
+) -> Result<openefi_core::downloader::KextsToEfiReport, String> {
+    use tauri::Emitter;
+
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI для обновления кекстов")?;
+    openefi_core::kextupdate::update_kexts(&bundles, &base, darwin, |pr| {
+        let _ = app.emit("kext-dl-progress", pr);
+    })
+}
+
+/// Автопоиск EFI-разделов (ESP) на этой машине
+#[tauri::command]
+pub fn find_esp_partitions() -> Vec<openefi_core::espdetect::EfiPartition> {
+    openefi_core::espdetect::find_esp()
+}
+
+/// Смонтировать EFI-раздел и вернуть точку монтирования
+#[tauri::command]
+pub fn mount_esp_partition(device: String) -> Result<String, String> {
+    openefi_core::espdetect::mount_esp(&device)
+}
+
+/// Состояние установленного OpenCore: версия (NVRAM/лог) + последняя на GitHub
+#[tauri::command]
+pub fn opencore_status(window: tauri::WebviewWindow, base: Option<String>) -> Result<openefi_core::opencore::OpenCoreStatus, String> {
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI")?;
+    Ok(openefi_core::opencore::detect_opencore_status(&base))
 }
 
 #[tauri::command]
@@ -169,6 +221,7 @@ pub fn generate_config_plist(
     ssdts: Vec<openefi_core::ssdts::SsdtEntry>,
     smbios: SmbiosData,
     darwin: u32,
+    compensations: Option<Compensations>,
 ) -> Result<String, String> {
     let input = openefi_core::config::ConfigInput {
         report: &report,
@@ -176,6 +229,7 @@ pub fn generate_config_plist(
         ssdts: &ssdts,
         smbios: &smbios,
         darwin,
+        compensations: compensations.unwrap_or_default(),
     };
     let bytes = openefi_core::config::generate_config(&input)?;
     String::from_utf8(bytes).map_err(|e| e.to_string())
@@ -189,8 +243,9 @@ pub fn save_config_plist(
     ssdts: Vec<openefi_core::ssdts::SsdtEntry>,
     smbios: SmbiosData,
     darwin: u32,
+    compensations: Option<Compensations>,
 ) -> Result<String, String> {
-    let xml = generate_config_plist(report, kexts, ssdts, smbios, darwin)?;
+    let xml = generate_config_plist(report, kexts, ssdts, smbios, darwin, compensations)?;
     let path = tauri_plugin_dialog::DialogExt::dialog(&window)
         .file()
         .set_file_name("config.plist")
@@ -216,23 +271,11 @@ pub fn download_kexts_to_efi(
     window: tauri::WebviewWindow,
     kexts: Vec<openefi_core::downloader::KextDownloadItem>,
     darwin: u32,
+    base: Option<String>,
 ) -> Result<openefi_core::downloader::KextsToEfiReport, String> {
     use tauri::Emitter;
-    use tauri_plugin_dialog::DialogExt;
 
-    let picked = DialogExt::dialog(&window)
-        .file()
-        .set_title("Выберите EFI-папку или диск с EFI")
-        .blocking_pick_folder();
-
-    let Some(picked) = picked else {
-        return Err("Выбор папки отменён".into());
-    };
-    let base = picked
-        .as_path()
-        .map(|p| p.to_path_buf())
-        .ok_or("недопустимый путь к папке")?;
-
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI")?;
     openefi_core::downloader::download_kexts(&kexts, &base, darwin, |pr| {
         let _ = app.emit("kext-dl-progress", pr);
     })
@@ -245,52 +288,34 @@ pub fn download_ssdts_to_efi(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
     ssdts: Vec<openefi_core::downloader::SsdtDownloadItem>,
+    base: Option<String>,
 ) -> Result<openefi_core::downloader::SsdtsToEfiReport, String> {
     use tauri::Emitter;
-    use tauri_plugin_dialog::DialogExt;
 
-    let picked = DialogExt::dialog(&window)
-        .file()
-        .set_title("Выберите EFI-папку или диск с EFI")
-        .blocking_pick_folder();
-
-    let Some(picked) = picked else {
-        return Err("Выбор папки отменён".into());
-    };
-    let base = picked
-        .as_path()
-        .map(|p| p.to_path_buf())
-        .ok_or("недопустимый путь к папке")?;
-
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI")?;
     openefi_core::downloader::download_ssdts(&ssdts, &base, |pr| {
         let _ = app.emit("ssdt-dl-progress", pr);
     })
 }
 
-/// Сборка полной EFI одной кнопкой: OpenCorePkg + OcBinaryData → готовая EFI.
+/// Сборка полной EFI одной кнопкой / обновление OpenCore: OpenCorePkg + OcBinaryData.
 /// Пишет только внутрь EFI/OC и EFI/BOOT; чужой BOOTX64.EFI не трогается.
 #[tauri::command]
 pub fn build_full_efi_to_efi(
     app: tauri::AppHandle,
     window: tauri::WebviewWindow,
+    base: Option<String>,
+    tools: Option<bool>,
+    audio_dxe: Option<bool>,
 ) -> Result<openefi_core::opencore::FullEfiReport, String> {
     use tauri::Emitter;
-    use tauri_plugin_dialog::DialogExt;
 
-    let picked = DialogExt::dialog(&window)
-        .file()
-        .set_title("Выберите EFI-папку или диск, куда собрать полную EFI")
-        .blocking_pick_folder();
-
-    let Some(picked) = picked else {
-        return Err("Выбор папки отменён".into());
+    let base = resolve_base(&window, base, "Выберите EFI-папку или диск, куда собрать полную EFI")?;
+    let options = openefi_core::opencore::FullEfiOptions {
+        tools: tools.unwrap_or(false),
+        audio_dxe: audio_dxe.unwrap_or(false),
     };
-    let base = picked
-        .as_path()
-        .map(|p| p.to_path_buf())
-        .ok_or("недопустимый путь к папке")?;
-
-    openefi_core::opencore::build_full_efi(&base, |pr| {
+    openefi_core::opencore::build_full_efi(&base, options, |pr| {
         let _ = app.emit("fullefi-progress", pr);
     })
 }
@@ -327,6 +352,7 @@ pub fn download_utb_tool(window: tauri::WebviewWindow, target: String) -> Result
 #[tauri::command]
 pub fn install_utbmap_to_efi(
     window: tauri::WebviewWindow,
+    base: Option<String>,
 ) -> Result<openefi_core::usbmap::UtbMapReport, String> {
     use tauri_plugin_dialog::DialogExt;
 
@@ -342,17 +368,7 @@ pub fn install_utbmap_to_efi(
         .map(|p| p.to_path_buf())
         .ok_or("недопустимый путь к кексту")?;
 
-    let picked_efi = DialogExt::dialog(&window)
-        .file()
-        .set_title("Выберите EFI-папку или диск с EFI")
-        .blocking_pick_folder();
-    let Some(picked_efi) = picked_efi else {
-        return Err("Выбор папки отменён".into());
-    };
-    let efi_path = picked_efi
-        .as_path()
-        .map(|p| p.to_path_buf())
-        .ok_or("недопустимый путь к папке")?;
+    let efi_path = resolve_base(&window, base, "Выберите EFI-папку или диск с EFI")?;
 
     openefi_core::usbmap::install_utbmap(&kext_path, &efi_path)
 }

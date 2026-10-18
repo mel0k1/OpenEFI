@@ -3,7 +3,9 @@
 //! DeviceProperties (iGPU framebuffer), NVRAM boot-args и PlatformInfo/Generic (SMBIOS).
 
 use plist::{Dictionary, Value};
+use serde::{Deserialize, Serialize};
 
+use crate::cpu_codename;
 use crate::hardware::HardwareReport;
 use crate::kexts;
 use crate::ssdts::SsdtEntry;
@@ -17,6 +19,47 @@ fn hex_to_bytes(s: &str) -> Vec<u8> {
 
 const SAMPLE: &str = include_str!("sample_config.plist");
 
+/// Компенсации настроек BIOS кварками OpenCore. Заполняются на шаге BIOS:
+/// пользователь не нашёл пункт в BIOS (или оставил включённым) — включаем кварк.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct Compensations {
+    /// CFG Lock не удалось найти/выключить в BIOS → AppleCpuPmCfgLock/AppleXcpmCfgLock
+    #[serde(default)]
+    pub cfg_lock: bool,
+    /// VT-d (Intel) / IOMMU (AMD) оставлен включённым → DisableIoMapper
+    #[serde(default)]
+    pub vtd: bool,
+}
+
+/// csr-active-config 03080000 (LE) — стандарт OCLP: untrusted kexts +
+/// unrestricted FS + apple internal. Нужен для root-патчей OCLP.
+const CSR_ACTIVE_OCLP: [u8; 4] = [0x03, 0x08, 0x00, 0x00];
+
+/// Первый коднейм поколения Haswell в INTEL_GENERATIONS (всё до него индексом —
+/// тоже Haswell и новее → Xcpm; Ivy Bridge и старше → legacy CpuPm).
+const HASWELL_FIRST_IDX: usize = 55;
+
+/// Какой кварк компенсирует CFG Lock для данного CPU.
+/// Haswell и новее — AppleXcpmCfgLock, Sandy/Ivy и старше — AppleCpuPmCfgLock.
+pub fn cfg_lock_quirk(codename: Option<&str>) -> &'static str {
+    let pos = codename.and_then(|c| cpu_codename::INTEL_GENERATIONS.iter().position(|g| *g == c));
+    match pos {
+        Some(p) if p >= HASWELL_FIRST_IDX && p < 62 => "AppleXcpmCfgLock",
+        Some(p) if p >= 62 => "AppleCpuPmCfgLock",
+        // неизвестный коднейм — современный дефолт
+        _ => "AppleXcpmCfgLock",
+    }
+}
+
+/// Нужен ли OCLP-режим: целевая macOS выше нативного лимита хоть одной GPU.
+pub fn needs_oclp_sip(report: &HardwareReport, darwin: u32) -> bool {
+    report.gpus.iter().any(|g| {
+        g.max_darwin
+            .map(|m| m > 0 && m < darwin)
+            .unwrap_or(false)
+    })
+}
+
 /// Входные данные для генерации config.plist
 pub struct ConfigInput<'a> {
     pub report: &'a HardwareReport,
@@ -24,6 +67,8 @@ pub struct ConfigInput<'a> {
     pub ssdts: &'a [SsdtEntry],
     pub smbios: &'a SmbiosData,
     pub darwin: u32,
+    /// Компенсации BIOS (кварки), собранные на шаге BIOS
+    pub compensations: Compensations,
 }
 
 /// Топологическая сортировка кекстов по зависимостям (Lilu/VirtualSMC раньше плагинов).
@@ -174,16 +219,25 @@ pub fn generate_config(input: &ConfigInput) -> Result<Vec<u8>, String> {
     if let Some(kernel) = root.get_mut("Kernel").and_then(|v| v.as_dictionary_mut()) {
         kernel.insert("Add".into(), Value::Array(kernel_add));
 
-        // XhciPortLimit: в macOS 11.3+ работает некорректно
         if let Some(quirks) = kernel.get_mut("Quirks").and_then(|v| v.as_dictionary_mut()) {
+            // XhciPortLimit: в macOS 11.3+ работает некорректно
             quirks.insert(
                 "XhciPortLimit".into(),
                 Value::Boolean(input.darwin < 20),
             );
+            // Компенсации BIOS: CFG Lock не выключен → кварк по поколению CPU;
+            // VT-d/IOMMU оставлен включённым → DisableIoMapper.
+            if input.compensations.cfg_lock && input.report.cpu.manufacturer == "Intel" {
+                let quirk = cfg_lock_quirk(input.report.cpu.codename.as_deref());
+                quirks.insert(quirk.into(), Value::Boolean(true));
+            }
+            if input.compensations.vtd {
+                quirks.insert("DisableIoMapper".into(), Value::Boolean(true));
+            }
         }
     }
 
-    // --- NVRAM / boot-args ---
+    // --- NVRAM / boot-args + SIP под OCLP ---
     if let Some(nvram) = root.get_mut("NVRAM").and_then(|v| v.as_dictionary_mut()) {
         if let Some(add) = nvram.get_mut("Add").and_then(|v| v.as_dictionary_mut()) {
             if let Some(guide) = add
@@ -194,6 +248,14 @@ pub fn generate_config(input: &ConfigInput) -> Result<Vec<u8>, String> {
                     "boot-args".into(),
                     Value::String("-v keepsyms=1".into()),
                 );
+                // Целевая macOS выше лимита GPU (например, Polaris на Sonoma+)
+                // → ослабляем SIP, чтобы OCLP мог ставить root-патчи.
+                if needs_oclp_sip(input.report, input.darwin) {
+                    guide.insert(
+                        "csr-active-config".into(),
+                        Value::Data(CSR_ACTIVE_OCLP.to_vec()),
+                    );
+                }
             }
         }
     }
@@ -300,6 +362,7 @@ mod tests {
             ssdts: &ssdts_sel,
             smbios: &smbios,
             darwin: 22,
+            compensations: Compensations::default(),
         };
         let bytes = generate_config(&input).unwrap();
         let root = parse_xml(&bytes);
@@ -390,6 +453,7 @@ mod tests {
             ssdts: &ssdts_sel,
             smbios: &smbios,
             darwin: 22,
+            compensations: Compensations::default(),
         };
         let bytes = generate_config(&input).unwrap();
         let root = parse_xml(&bytes);
@@ -426,6 +490,7 @@ mod tests {
             ssdts: &ssdts_sel,
             smbios: &smbios,
             darwin: 22,
+            compensations: Compensations::default(),
         };
         let bytes = generate_config(&input).unwrap();
         let root = parse_xml(&bytes);
@@ -440,5 +505,157 @@ mod tests {
             !bundles.iter().any(|b| b.contains("NVIDIA Driver")),
             "системный драйвер не должен попадать в Kernel/Add: {bundles:?}"
         );
+    }
+
+    #[test]
+    fn test_cfg_lock_compensation_haswell_vs_legacy() {
+        // Haswell и новее → AppleXcpmCfgLock
+        assert_eq!(cfg_lock_quirk(Some("Coffee Lake-S")), "AppleXcpmCfgLock");
+        assert_eq!(cfg_lock_quirk(Some("Haswell")), "AppleXcpmCfgLock");
+        assert_eq!(cfg_lock_quirk(Some("Comet Lake-S")), "AppleXcpmCfgLock");
+        // Sandy/Ivy и старше → legacy AppleCpuPmCfgLock
+        assert_eq!(cfg_lock_quirk(Some("Sandy Bridge")), "AppleCpuPmCfgLock");
+        assert_eq!(cfg_lock_quirk(Some("Ivy Bridge-E")), "AppleCpuPmCfgLock");
+        // неизвестно → современный дефолт
+        assert_eq!(cfg_lock_quirk(None), "AppleXcpmCfgLock");
+        assert_eq!(cfg_lock_quirk(Some("Нет такого")), "AppleXcpmCfgLock");
+    }
+
+    #[test]
+    fn test_compensations_written_to_quirks() {
+        let report = sample_report(); // Intel Coffee Lake-S
+        let kexts_sel: Vec<kexts::KextEntry> = {
+            let mut all = kexts::match_kexts(&report, 22);
+            all.retain(|k| k.selected);
+            all
+        };
+        let ssdts_sel = ssdts::recommend(&report);
+        let smbios = crate::smbios::generate("iMac19,1");
+        let input = ConfigInput {
+            report: &report,
+            kexts: &kexts_sel,
+            ssdts: &ssdts_sel,
+            smbios: &smbios,
+            darwin: 22,
+            compensations: Compensations {
+                cfg_lock: true,
+                vtd: true,
+            },
+        };
+        let bytes = generate_config(&input).unwrap();
+        let root = parse_xml(&bytes);
+        let quirks = path(&root, &["Kernel", "Quirks"]).as_dictionary().unwrap();
+        // Coffee Lake = Haswell+ → Xcpm-вариант, CpuPm остаётся false из сэмпла
+        assert_eq!(
+            quirks.get("AppleXcpmCfgLock").and_then(|v| v.as_boolean()),
+            Some(true)
+        );
+        assert_eq!(
+            quirks.get("AppleCpuPmCfgLock").and_then(|v| v.as_boolean()),
+            Some(false)
+        );
+        assert_eq!(
+            quirks.get("DisableIoMapper").and_then(|v| v.as_boolean()),
+            Some(true)
+        );
+
+        // Без компенсаций кварки остаются false из сэмпла
+        let input2 = ConfigInput {
+            compensations: Compensations::default(),
+            ..input
+        };
+        let root2 = parse_xml(&generate_config(&input2).unwrap());
+        let quirks2 = path(&root2, &["Kernel", "Quirks"]).as_dictionary().unwrap();
+        assert_eq!(
+            quirks2.get("AppleXcpmCfgLock").and_then(|v| v.as_boolean()),
+            Some(false)
+        );
+        assert_eq!(
+            quirks2.get("DisableIoMapper").and_then(|v| v.as_boolean()),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn test_cfg_lock_amd_not_set() {
+        let mut report = sample_report();
+        report.cpu.manufacturer = "AMD".into();
+        report.cpu.codename = Some("Vermeer".into());
+        let kexts_sel: Vec<kexts::KextEntry> = {
+            let mut all = kexts::match_kexts(&report, 22);
+            all.retain(|k| k.selected);
+            all
+        };
+        let ssdts_sel = ssdts::recommend(&report);
+        let smbios = crate::smbios::generate("iMacPro1,1");
+        let input = ConfigInput {
+            report: &report,
+            kexts: &kexts_sel,
+            ssdts: &ssdts_sel,
+            smbios: &smbios,
+            darwin: 22,
+            compensations: Compensations {
+                cfg_lock: true, // на AMD CFG Lock не существует — кварк не ставим
+                vtd: true,      // IOMMU включён → DisableIoMapper нужен
+            },
+        };
+        let root = parse_xml(&generate_config(&input).unwrap());
+        let quirks = path(&root, &["Kernel", "Quirks"]).as_dictionary().unwrap();
+        // на AMD CFG Lock-кварки не включаются, а DisableIoMapper — да
+        assert_eq!(
+            quirks.get("AppleXcpmCfgLock").and_then(|v| v.as_boolean()),
+            Some(false)
+        );
+        assert_eq!(
+            quirks.get("AppleCpuPmCfgLock").and_then(|v| v.as_boolean()),
+            Some(false)
+        );
+        assert_eq!(
+            quirks.get("DisableIoMapper").and_then(|v| v.as_boolean()),
+            Some(true)
+        );
+    }
+
+    #[test]
+    fn test_sip_oclp_for_old_gpu() {
+        let mut report = sample_report();
+        // Polaris 21: нативный лимит — High Sierra (darwin 17)
+        report.gpus[0].name = "AMD Radeon RX 550 (Polaris 21)".into();
+        report.gpus[0].vendor_id = "1002".into();
+        report.gpus[0].device_type = "Discrete GPU".into();
+        report.gpus[0].max_darwin = Some(17);
+        let kexts_sel: Vec<kexts::KextEntry> = {
+            let mut all = kexts::match_kexts(&report, 23);
+            all.retain(|k| k.selected);
+            all
+        };
+        let ssdts_sel = ssdts::recommend(&report);
+        let smbios = crate::smbios::generate("iMacPro1,1");
+        let input = ConfigInput {
+            report: &report,
+            kexts: &kexts_sel,
+            ssdts: &ssdts_sel,
+            smbios: &smbios,
+            darwin: 23, // Sonoma выше лимита Polaris → OCLP
+            compensations: Compensations::default(),
+        };
+        assert!(needs_oclp_sip(&report, 23));
+        let root = parse_xml(&generate_config(&input).unwrap());
+        let csr = path(&root, &["NVRAM", "Add", "7C436110-AB2A-4BBB-A880-FE41995C9F82", "csr-active-config"])
+            .as_data()
+            .unwrap();
+        assert_eq!(csr, &[0x03, 0x08, 0x00, 0x00], "csr-active-config 03080000");
+
+        // Цель в пределах лимита GPU — SIP не трогаем (нули из сэмпла)
+        let input2 = ConfigInput {
+            darwin: 17,
+            ..input
+        };
+        assert!(!needs_oclp_sip(&report, 17));
+        let root2 = parse_xml(&generate_config(&input2).unwrap());
+        let csr2 = path(&root2, &["NVRAM", "Add", "7C436110-AB2A-4BBB-A880-FE41995C9F82", "csr-active-config"])
+            .as_data()
+            .unwrap();
+        assert_eq!(csr2, &[0, 0, 0, 0], "SIP остаётся полным");
     }
 }

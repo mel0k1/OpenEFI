@@ -170,6 +170,18 @@ fn find(name: &str) -> Option<&'static KextDef> {
     KEXTS.iter().find(|k| k.name == name)
 }
 
+/// Репозиторий GitHub кекта по имени бандла («Lilu.kext» → «acidanthera/Lilu»)
+pub fn repo_for(bundle_name: &str) -> Option<String> {
+    let name = bundle_name.trim().trim_end_matches(".kext").trim();
+    find(name).and_then(|k| k.repo).map(str::to_string)
+}
+
+/// Имя кекта известно каталогу (учитываем бандлы без «.kext»)
+pub fn is_known(bundle_name: &str) -> bool {
+    let name = bundle_name.trim().trim_end_matches(".kext").trim();
+    find(name).is_some()
+}
+
 pub fn match_kexts(report: &HardwareReport, macos_darwin: u32) -> Vec<KextEntry> {
     let ids = device_ids();
     let mut selected: Vec<String> = vec![

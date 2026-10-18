@@ -147,6 +147,99 @@ export interface UtbMapReport {
   utbdefault_disabled: boolean;
 }
 
+// --- Компенсации BIOS (кварки) ---
+
+/** Ключи отправляются в бэкенд как есть (snake_case) */
+export interface Compensations {
+  /** CFG Lock не выключен в BIOS → AppleCpuPm/AppleXcpmCfgLock */
+  cfg_lock: boolean;
+  /** VT-d (Intel) / IOMMU (AMD) включён → DisableIoMapper */
+  vtd: boolean;
+}
+
+// --- Аудит config.plist ---
+
+export interface AuditIssue {
+  /** error | warning | info */
+  severity: string;
+  /** Семантический код — переводится ключом cfga.issue.<code> */
+  code: string;
+  params: string[];
+}
+
+export interface KextAudit {
+  bundle: string;
+  enabled: boolean;
+  on_disk: boolean;
+  version: string | null;
+}
+
+export interface AcpiAudit {
+  path: string;
+  enabled: boolean;
+  on_disk: boolean;
+}
+
+export interface OrphanKext {
+  bundle: string;
+  registered: boolean;
+}
+
+export interface ConfigAudit {
+  config_path: string;
+  found: boolean;
+  kernel: KextAudit[];
+  acpi: AcpiAudit[];
+  orphans: OrphanKext[];
+  orphan_tables: string[];
+  issues: AuditIssue[];
+  kexts_total: number;
+  kexts_enabled: number;
+  tables_total: number;
+}
+
+// --- Обновление кекстов ---
+
+export interface InstalledKext {
+  bundle: string;
+  version: string | null;
+  repo: string | null;
+  known: boolean;
+}
+
+export interface KextUpdateCheck {
+  bundle: string;
+  repo: string | null;
+  installed: string | null;
+  latest: string | null;
+  outdated: boolean;
+  message: string | null;
+}
+
+export interface KextUpdatesReport {
+  installed: InstalledKext[];
+  checks: KextUpdateCheck[];
+}
+
+// --- Автопоиск EFI-раздела ---
+
+export interface EfiPartition {
+  device: string;
+  disk: number | null;
+  partition: number | null;
+  mounted_at: string | null;
+  size_mb: number | null;
+}
+
+// --- Состояние OpenCore (обновление) ---
+
+export interface OpenCoreStatus {
+  installed: boolean;
+  version: string | null;
+  latest: string | null;
+  version_source: string;
+}
+
 // --- BIOS-чеклист ---
 
 export interface BiosItem {
@@ -214,6 +307,8 @@ export interface FullEfiReport {
   efi_dir: string;
   oc_dir: string;
   opencore_version: string | null;
+  previous_version?: string | null;
+  was_up_to_date?: boolean | null;
   files_installed: string[];
   bootx64: Bootx64Outcome;
   bootx64_note: string | null;
@@ -223,6 +318,8 @@ export interface FullEfiReport {
   config_backup: boolean;
   canopy_enabled: boolean;
   resources_installed: string[];
+  tools_installed?: string[];
+  audio_installed?: boolean;
   backup_path?: string | null;
   audit_warnings?: string[];
   warnings: string[];

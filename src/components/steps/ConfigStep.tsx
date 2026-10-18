@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { CheckCircle2, Download, ExternalLink, FileCode2, Loader2, TriangleAlert } from "lucide-react";
+import { CheckCircle2, Download, ExternalLink, FileCode2, Loader2, ShieldAlert, TriangleAlert, Wrench } from "lucide-react";
 import { invoke } from "@/types";
-import type { HardwareReport, KextEntry, SmbiosData, SsdtEntry } from "@/types";
+import type { Compensations, HardwareReport, KextEntry, SmbiosData, SsdtEntry } from "@/types";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useI18n } from "@/i18n";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,9 @@ interface Props {
   kexts: KextEntry[];
   smbios: SmbiosData | null;
   darwin: number;
+  compensations: Compensations;
+  /** Найденная ESP-база из детектора */
+  base?: string | null;
 }
 
 const KIND_BADGE: Record<string, string> = {
@@ -25,7 +28,7 @@ const KIND_BADGE: Record<string, string> = {
   "Опциональна": "outline",
 };
 
-export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin }: Props) {
+export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin, compensations, base }: Props) {
   const { t, tb } = useI18n();
   const [saving, setSaving] = useState(false);
   const [savedPath, setSavedPath] = useState<string | null>(null);
@@ -33,6 +36,12 @@ export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin 
 
   const selectedKexts = kexts.filter((k) => k.selected);
   const selectedSsdts = ssdts.filter((s) => s.selected);
+
+  // OCLP-режим: целевая macOS выше нативного лимита хоть одной GPU → csr-active-config
+  const sipOclp = report.gpus.some(
+    (g) => g.max_darwin != null && g.max_darwin > 0 && g.max_darwin < darwin,
+  );
+  const anyCompensation = compensations.cfg_lock || compensations.vtd;
 
   const generate = async () => {
     if (!smbios) return;
@@ -46,6 +55,7 @@ export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin 
         ssdts: selectedSsdts,
         smbios,
         darwin,
+        compensations,
       });
       setSavedPath(path);
     } catch (e) {
@@ -99,7 +109,7 @@ export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin 
             ))}
           </div>
 
-          <SsdtEfiInstall ssdts={ssdts} />
+          <SsdtEfiInstall ssdts={ssdts} base={base} />
         </CardContent>
       </Card>
 
@@ -114,6 +124,41 @@ export function ConfigStep({ report, ssdts, onToggleSsdt, kexts, smbios, darwin 
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* Компенсации BIOS → кварки */}
+          <div className="rounded-lg border p-3">
+            <div className="flex items-center gap-1.5 text-xs font-medium">
+              <Wrench className="text-primary size-3.5" />
+              {t("cfg.quirksTitle")}
+            </div>
+            {anyCompensation ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {compensations.cfg_lock && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {t("cfg.quirksCfgLock")}
+                  </Badge>
+                )}
+                {compensations.vtd && (
+                  <Badge variant="secondary" className="text-[10px]">
+                    {t("cfg.quirksVtd")}
+                  </Badge>
+                )}
+              </div>
+            ) : (
+              <p className="text-muted-foreground mt-1 text-xs">{t("cfg.quirksEmpty")}</p>
+            )}
+          </div>
+
+          {/* SIP под OCLP */}
+          {sipOclp && (
+            <div className="flex items-start gap-2 rounded-md bg-amber-500/10 p-3 text-amber-600 dark:text-amber-400">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+              <div className="text-xs leading-relaxed">
+                <div className="font-medium">{t("cfg.sipTitle")}</div>
+                <div className="mt-0.5">{t("cfg.sipText")}</div>
+              </div>
+            </div>
+          )}
+
           <div className="grid gap-2 text-xs sm:grid-cols-2">
             <div className="rounded-lg border p-2.5">
               <div className="font-medium">{t("cfg.acpiAdd")}</div>

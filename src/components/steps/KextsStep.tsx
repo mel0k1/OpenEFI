@@ -18,6 +18,8 @@ interface Props {
   kexts: KextEntry[];
   onToggle: (name: string) => void;
   darwin: number;
+  /** Найденная ESP-база из детектора */
+  base?: string | null;
 }
 
 const STATUS_VARIANTS: Record<string, BadgeVariant> = {
@@ -27,7 +29,7 @@ const STATUS_VARIANTS: Record<string, BadgeVariant> = {
   incompatible: "destructive",
 };
 
-export function KextsStep({ kexts, onToggle, darwin }: Props) {
+export function KextsStep({ kexts, onToggle, darwin, base }: Props) {
   const { t, tb } = useI18n();
   const [query, setQuery] = useState("");
 
@@ -77,9 +79,9 @@ export function KextsStep({ kexts, onToggle, darwin }: Props) {
         </CardContent>
       </Card>
 
-      <EfiInstallCard kexts={kexts} darwin={darwin} />
+      <EfiInstallCard kexts={kexts} darwin={darwin} base={base} />
 
-      <UsbMappingCard />
+      <UsbMappingCard base={base} />
 
       <div className="relative">
         <Search className="text-muted-foreground absolute top-1/2 left-3 size-4 -translate-y-1/2" />

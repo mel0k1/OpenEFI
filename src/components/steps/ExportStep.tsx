@@ -8,15 +8,21 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EfiAuditCard } from "@/components/EfiAuditCard";
 import { FullEfiBuildCard } from "@/components/FullEfiBuildCard";
+import { EspDetector } from "@/components/EspDetector";
+import { ConfigAuditCard } from "@/components/ConfigAuditCard";
+import { KextUpdatesCard } from "@/components/KextUpdatesCard";
 
 interface Props {
   report: HardwareReport;
   kexts: KextEntry[];
   smbios: SmbiosData | null;
   darwin: number;
+  /** Найденная ESP-база + её обновление из детектора */
+  base: string | null;
+  onBase: (base: string | null) => void;
 }
 
-export function ExportStep({ report, kexts, smbios, darwin }: Props) {
+export function ExportStep({ report, kexts, smbios, darwin, base, onBase }: Props) {
   const { t, tb } = useI18n();
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState<string | null>(null);
@@ -92,7 +98,13 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
         </CardContent>
       </Card>
 
-      <EfiAuditCard />
+      <EspDetector base={base} onBase={onBase} />
+
+      <EfiAuditCard base={base} />
+
+      <ConfigAuditCard base={base} />
+
+      <KextUpdatesCard base={base} darwin={darwin} />
 
       <Card>
         <CardHeader>
@@ -100,7 +112,7 @@ export function ExportStep({ report, kexts, smbios, darwin }: Props) {
           <CardDescription className="text-xs">{t("fullefi.subtitle")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <FullEfiBuildCard />
+          <FullEfiBuildCard base={base} />
         </CardContent>
       </Card>
 

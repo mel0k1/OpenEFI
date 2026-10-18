@@ -1,11 +1,14 @@
 pub mod bios;
 pub mod config;
+pub mod configaudit;
 pub mod cpu_codename;
 pub mod db;
 pub mod downloader;
 pub mod efiprotect;
+pub mod espdetect;
 pub mod hardware;
 pub mod kexts;
+pub mod kextupdate;
 pub mod macos;
 pub mod opencore;
 pub mod smbios;

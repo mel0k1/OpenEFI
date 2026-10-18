@@ -20,8 +20,20 @@ use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
 use crate::downloader::{
-    download_to_file, download_to_file_limited, http_agent, http_agent_no_redirects, efi_safety,
+    download_to_file, download_to_file_limited, efi_safety, http_agent, http_agent_no_redirects,
 };
+
+/// GUID переменных NVRAM OpenCore (opencore-version и др.)
+const OC_VENDOR_GUID_EFIVAR: &str = "opencore-version-4d1ede05-38c7-4a6a-9cc6-4bcca8b38c14";
+/// Резервный GUID Apple (встречается в сторонних инструментах)
+const OC_APPLE_GUID_EFIVAR: &str = "opencore-version-7c436110-ab2a-4bbb-a880-fe41995c9f82";
+/// Аудио-файлы из OcBinaryData, реально нужные пикеру (без всех языков)
+const AUDIO_FILES: &[&str] = &[
+    "AXEFIAudio_Boot.mp3",
+    "AXEFIAudio_Beep.mp3",
+    "AXEFIAudio_Click.mp3",
+    "AXEFIAudio_VoiceOver_Boot.mp3",
+];
 
 pub const OC_PKG_REPO: &str = "acidanthera/OpenCorePkg";
 pub const OC_PKG_LATEST_URL: &str = "https://github.com/acidanthera/OpenCorePkg/releases/latest";
@@ -60,6 +72,17 @@ pub enum Bootx64Outcome {
     SkippedForeign,
 }
 
+/// Опции сборки/обновления полной EFI
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct FullEfiOptions {
+    /// Установить OpenShell.efi в OC/Tools и зарегистрировать в Misc/Tools
+    #[serde(default)]
+    pub tools: bool,
+    /// Установить AudioDxe.efi + аудиоресурсы (звук в пикере, boot chime)
+    #[serde(default)]
+    pub audio_dxe: bool,
+}
+
 /// Итоговый отчёт сборки полной EFI
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FullEfiReport {
@@ -67,6 +90,12 @@ pub struct FullEfiReport {
     pub oc_dir: String,
     /// Версия OpenCore из тега релиза (например «1.0.4»)
     pub opencore_version: Option<String>,
+    /// Версия установленного OpenCore до обновления (NVRAM/лог-файл, best-effort)
+    #[serde(default)]
+    pub previous_version: Option<String>,
+    /// Установленный OpenCore.efi уже совпадал с новой версией (по байтам)
+    #[serde(default)]
+    pub was_up_to_date: Option<bool>,
     /// Относительные пути установленных файлов (от корня EFI)
     pub files_installed: Vec<String>,
     /// Что стало с EFI/BOOT/BOOTX64.EFI
@@ -85,12 +114,32 @@ pub struct FullEfiReport {
     pub canopy_enabled: bool,
     /// Папки Resources, скопированные из OcBinaryData (Font/Label/Image)
     pub resources_installed: Vec<String>,
+    /// Инструменты, установленные в OC/Tools (например OpenShell.efi)
+    #[serde(default)]
+    pub tools_installed: Vec<String>,
+    /// AudioDxe.efi + аудиоресурсы установлены
+    #[serde(default)]
+    pub audio_installed: bool,
     /// Куда сделан автоматический бэкап EFI/OC перед изменениями
     pub backup_path: Option<String>,
     /// Предупреждения защиты EFI (нет OpenCore, не похоже на ESP и т.п.)
     pub audit_warnings: Vec<String>,
     /// Предупреждения самой сборки (чужой BOOTX64, Sample-конфиг и т.п.)
     pub warnings: Vec<String>,
+}
+
+/// Состояние установленного OpenCore (для кнопки «Обновить OpenCore»)
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct OpenCoreStatus {
+    /// OpenCore.efi или config.plist найден в EFI/OC
+    pub installed: bool,
+    /// Версия установленного OpenCore (best-effort: NVRAM/лог)
+    pub version: Option<String>,
+    /// Последняя версия на GitHub (redirect releases/latest)
+    pub latest: Option<String>,
+    /// Как OpenEFI определил версию (nvram | log | none) — для подсказки
+    #[serde(default)]
+    pub version_source: String,
 }
 
 /// Результат раскладки файлов из архива OpenCorePkg
@@ -275,9 +324,11 @@ fn install_opencore_files<R: Read + Seek>(
 /// Раскладка HfsPlus.efi + Resources из OcBinaryData.
 /// Драйверы-записи пикера берутся из пакета OpenCorePkg той же версии;
 /// OcBinaryData нужен только для HfsPlus (закрытый драйвер) и Resources.
+/// `with_audio` — также положить аудиофайлы для AudioDxe (boot chime).
 fn install_ocbinarydata<R: Read + Seek>(
     ar: &mut ZipArchive<R>,
     efi_base: &Path,
+    with_audio: bool,
 ) -> Result<(Vec<String>, Vec<String>), String> {
     let drivers_dir = efi_base.join("OC").join("Drivers");
     std::fs::create_dir_all(&drivers_dir)
@@ -292,8 +343,13 @@ fn install_ocbinarydata<R: Read + Seek>(
     write_file(&drivers_dir.join("HfsPlus.efi"), &hfs)?;
     files.push("OC/Drivers/HfsPlus.efi".into());
 
-    // Resources для графического пикера: Font, Label, Image (Audio/Tool не нужны
-    // без AudioDxe и Tools — не копируем, чтобы не раздувать EFI)
+    // Resources для графического пикера: Font, Label, Image (Tool не нужен —
+    // не копируем, чтобы не раздувать EFI); Audio копируем только с AudioDxe
+    let audio_wanted: HashSet<String> = if with_audio {
+        AUDIO_FILES.iter().map(|s| s.to_lowercase()).collect()
+    } else {
+        HashSet::new()
+    };
     let mut resources: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     let mut written: u64 = 0;
@@ -314,7 +370,17 @@ fn install_ocbinarydata<R: Read + Seek>(
         }
         let sub = rel.split('/').next().unwrap_or("").to_string();
         let sub_lc = sub.to_lowercase();
-        if !matches!(sub_lc.as_str(), "font" | "label" | "image") {
+        let allowed = if sub_lc == "audio" {
+            if !with_audio {
+                continue;
+            }
+            // только базовые файлы звука, без всех языков
+            let file_lc = rel.rsplit('/').next().unwrap_or("").to_lowercase();
+            audio_wanted.contains(&file_lc)
+        } else {
+            matches!(sub_lc.as_str(), "font" | "label" | "image")
+        };
+        if !allowed {
             continue;
         }
         if rel.split('/').any(|c| c == "..") {
@@ -463,10 +529,286 @@ pub fn fetch_opencore_version(agent: &ureq::Agent) -> Result<String, String> {
     Ok(tag)
 }
 
+/// Установить OpenShell.efi из архива OpenCorePkg в EFI/OC/Tools.
+/// Возвращает относительный путь или None, если в архиве нет Tools.
+fn install_tools<R: Read + Seek>(
+    ar: &mut ZipArchive<R>,
+    efi_base: &Path,
+) -> Result<Option<String>, String> {
+    let Some(idx) = find_entry(ar, "x64/efi/oc/tools/openshell.efi") else {
+        return Ok(None);
+    };
+    let bytes = entry_bytes(ar, idx)?;
+    write_file(&efi_base.join("OC").join("Tools").join("OpenShell.efi"), &bytes)?;
+    Ok(Some("OC/Tools/OpenShell.efi".into()))
+}
+
+/// Включить существующие и добавить недостающие записи Misc/Tools.
+/// Возвращает (изменён ли конфиг, сделан ли бэкап).
+fn patch_misc_tools(config: &Path, tools: &[String]) -> Result<(bool, bool), String> {
+    let mut root = Value::from_reader(std::io::BufReader::new(
+        std::fs::File::open(config).map_err(|e| format!("не открыть {}: {e}", config.display()))?,
+    ))
+    .map_err(|e| format!("не разобрать {}: {e}", config.display()))?
+    .into_dictionary()
+    .ok_or_else(|| format!("{} — не словарь plist", config.display()))?;
+
+    let Some(misc) = root.get_mut("Misc").and_then(|v| v.as_dictionary_mut()) else {
+        return Err("в config.plist нет секции Misc".into());
+    };
+    let tools_arr = match misc.get_mut("Tools") {
+        Some(v) if matches!(v, Value::Array(_)) => v,
+        Some(_) => return Err("Misc → Tools в config.plist — не массив".into()),
+        None => {
+            misc.insert("Tools".into(), Value::Array(Vec::new()));
+            misc.get_mut("Tools").ok_or("не создать Misc → Tools")?
+        }
+    };
+    let entries = tools_arr.as_array_mut().unwrap();
+
+    let mut changed = false;
+    for tool in tools {
+        let t_lc = tool.to_lowercase();
+        let name = tool.rsplit('/').next().unwrap_or(tool);
+        let mut found = false;
+        for e in entries.iter_mut() {
+            let Some(d) = e.as_dictionary_mut() else { continue };
+            let matches = d
+                .get("Path")
+                .and_then(|p| p.as_string())
+                .map(|p| {
+                    let p = p.replace('\\', "/").to_lowercase();
+                    p == t_lc || p == format!("tools/{t_lc}") || p.ends_with(&format!("/{t_lc}"))
+                })
+                .unwrap_or(false);
+            if matches {
+                if !d.get("Enabled").and_then(|b| b.as_boolean()).unwrap_or(false) {
+                    d.insert("Enabled".into(), Value::Boolean(true));
+                    changed = true;
+                }
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            let mut d = Dictionary::new();
+            d.insert("Arguments".into(), Value::String(String::new()));
+            d.insert("Auxiliary".into(), Value::Boolean(true));
+            d.insert("Comment".into(), Value::String(String::new()));
+            d.insert("Enabled".into(), Value::Boolean(true));
+            d.insert("Flavour".into(), Value::String("Auto".into()));
+            d.insert("Name".into(), Value::String(name.to_string()));
+            d.insert("Path".into(), Value::String(tool.clone()));
+            d.insert("RealPath".into(), Value::Boolean(false));
+            d.insert("TextMode".into(), Value::Boolean(false));
+            entries.push(Value::Dictionary(d));
+            changed = true;
+        }
+    }
+
+    if !changed {
+        return Ok((false, false));
+    }
+
+    // резервная копия до записи
+    let backup = config.with_extension("plist.bak-openefi");
+    std::fs::copy(config, &backup)
+        .map_err(|e| format!("не сделать копию {}: {e}", backup.display()))?;
+
+    let mut buf = Vec::new();
+    Value::Dictionary(root)
+        .to_writer_xml(&mut buf)
+        .map_err(|e| format!("не сериализовать {}: {e}", config.display()))?;
+    std::fs::write(config, buf).map_err(|e| format!("не записать {}: {e}", config.display()))?;
+    Ok((true, true))
+}
+
+/// Включить аудио пикера (UEFI → Audio → AudioSupport) для AudioDxe
+fn patch_audio_support(config: &Path) -> Result<(bool, bool), String> {
+    let mut root = Value::from_reader(std::io::BufReader::new(
+        std::fs::File::open(config).map_err(|e| format!("не открыть {}: {e}", config.display()))?,
+    ))
+    .map_err(|e| format!("не разобрать {}: {e}", config.display()))?
+    .into_dictionary()
+    .ok_or_else(|| format!("{} — не словарь plist", config.display()))?;
+
+    let Some(uefi) = root.get_mut("UEFI").and_then(|v| v.as_dictionary_mut()) else {
+        return Err("в config.plist нет секции UEFI".into());
+    };
+    if !matches!(uefi.get("Audio"), Some(Value::Dictionary(_))) {
+        uefi.insert("Audio".into(), Value::Dictionary(Dictionary::new()));
+    }
+    let Some(audio) = uefi.get_mut("Audio").and_then(|v| v.as_dictionary_mut()) else {
+        return Err("не создать UEFI → Audio".into());
+    };
+    let already = audio
+        .get("AudioSupport")
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(false);
+    if already {
+        return Ok((false, false));
+    }
+    audio.insert("AudioSupport".into(), Value::Boolean(true));
+
+    let backup = config.with_extension("plist.bak-openefi");
+    std::fs::copy(config, &backup)
+        .map_err(|e| format!("не сделать копию {}: {e}", backup.display()))?;
+
+    let mut buf = Vec::new();
+    Value::Dictionary(root)
+        .to_writer_xml(&mut buf)
+        .map_err(|e| format!("не сериализовать {}: {e}", config.display()))?;
+    std::fs::write(config, buf).map_err(|e| format!("не записать {}: {e}", config.display()))?;
+    Ok((true, true))
+}
+
+// ---------------- Определение версии установленного OpenCore ----------------
+
+/// Валидная ли строка похожа на версию OC («1.0.5», «0.9.7»)
+fn plausible_oc_version(s: &str) -> Option<String> {
+    let s = s.trim().trim_matches(char::is_control).trim();
+    let mut parts = s.split('.');
+    let first = parts.next()?.trim();
+    let second = parts.next()?.trim();
+    let third = parts.next()?.trim();
+    if parts.next().is_some() {
+        return None;
+    }
+    let (a, b, c) = (first.parse::<u32>().ok()?, second.parse::<u32>().ok()?, third.parse::<u32>().ok()?);
+    // OpenCore был 0.5.x–0.9.x, сейчас 1.x — a ∈ 0..=9
+    if a > 9 || b > 99 || c > 99 {
+        return None;
+    }
+    Some(s.to_string())
+}
+
+/// Первая валидная версия в ASCII-тексте (лог-файл OpenCore)
+fn first_version_in_text(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut start: Option<usize> = None;
+    let mut buf = String::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        let is_ver_char = b.is_ascii_digit() || b == b'.';
+        if is_ver_char {
+            if start.is_none() {
+                start = Some(i);
+                buf.clear();
+            }
+            buf.push(b as char);
+        } else if start.is_some() {
+            if let Some(v) = plausible_oc_version(&buf) {
+                return Some(v);
+            }
+            start = None;
+            buf.clear();
+        }
+        if buf.len() > 16 {
+            start = None;
+            buf.clear();
+        }
+    }
+    plausible_oc_version(&buf)
+}
+
+/// Версия OpenCore из NVRAM-переменной (Linux efivars, macOS nvram)
+fn version_from_nvram() -> Option<(String, String)> {
+    match std::env::consts::OS {
+        "linux" => {
+            for name in [OC_VENDOR_GUID_EFIVAR, OC_APPLE_GUID_EFIVAR] {
+                let p = Path::new("/sys/firmware/efi/efivars").join(name);
+                if let Ok(data) = std::fs::read(&p) {
+                    if data.len() > 4 {
+                        // первые 4 байта — attributes efivarfs
+                        let raw = String::from_utf8_lossy(&data[4..]);
+                        let raw = raw.trim_end_matches(char::from(0));
+                        if let Some(v) = plausible_oc_version(raw) {
+                            return Some((v, "nvram".into()));
+                        }
+                    }
+                }
+            }
+            None
+        }
+        "macos" => {
+            let out = std::process::Command::new("nvram")
+                .arg("opencore-version")
+                .output()
+                .ok()?;
+            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            let text = text.split('\t').next_back().unwrap_or("").trim().to_string();
+            plausible_oc_version(&text).map(|v| (v, "nvram".into()))
+        }
+        _ => None,
+    }
+}
+
+/// Версия OpenCore из последнего лог-файла на ESP (opencore-*.txt)
+fn version_from_logs(efi_base: &Path) -> Option<(String, String)> {
+    let volume_root = efi_base.parent().unwrap_or(efi_base);
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for dir in [volume_root, &efi_base.join("OC")] {
+        if let Ok(rd) = std::fs::read_dir(dir) {
+            for e in rd.flatten() {
+                let name = e.file_name().to_string_lossy().to_lowercase();
+                if name.starts_with("opencore-") && name.ends_with(".txt") {
+                    candidates.push(e.path());
+                }
+            }
+        }
+    }
+    // свежий лог — последний по имени (в нём уже дата-время)
+    candidates.sort();
+    candidates.reverse();
+    for log in candidates.iter().take(3) {
+        if let Ok(data) = std::fs::read(log) {
+            let head = &data[..data.len().min(64 * 1024)];
+            let text = String::from_utf8_lossy(head);
+            if let Some(v) = first_version_in_text(&text) {
+                return Some((v, "log".into()));
+            }
+        }
+    }
+    None
+}
+
+/// Версия установленного OpenCore (best-effort): NVRAM → лог-файлы → None.
+/// Определение по байтам OpenCore.efi невозможно — acidanthera не штампует
+/// версию в бинарник (в RELEASE-сборках лежит шаблон REL-XXX-YYYY-MM-DD).
+pub fn detect_installed_version(efi_base: &Path) -> (Option<String>, String) {
+    if let Some((v, src)) = version_from_nvram() {
+        return (Some(v), src);
+    }
+    if let Some((v, src)) = version_from_logs(efi_base) {
+        return (Some(v), src);
+    }
+    (None, "none".into())
+}
+
+/// Статус установленного OpenCore для UI: версия + последняя на GitHub
+pub fn detect_opencore_status(selected_dir: &Path) -> OpenCoreStatus {
+    let efi_base = crate::downloader::resolve_efi_base(selected_dir);
+    let oc = efi_base.join("OC");
+    let installed = oc.join("OpenCore.efi").is_file() || oc.join("config.plist").is_file();
+    let (version, version_source) = if installed {
+        detect_installed_version(&efi_base)
+    } else {
+        (None, "none".into())
+    };
+    let latest = fetch_opencore_version(&http_agent_no_redirects()).ok();
+    OpenCoreStatus {
+        installed,
+        version,
+        latest,
+        version_source,
+    }
+}
+
 /// Основной сценарий: скачать OpenCorePkg + OcBinaryData и собрать полную EFI.
-/// `progress` вызывается по мере прохождения этапов.
+/// Используется и для первой установки, и для «Обновить OpenCore» (options
+/// управляет Tools/AudioDxe). `progress` вызывается по мере прохождения этапов.
 pub fn build_full_efi(
     selected_dir: &Path,
+    options: FullEfiOptions,
     mut progress: impl FnMut(BuildProgress),
 ) -> Result<FullEfiReport, String> {
     let efi_base = crate::downloader::resolve_efi_base(selected_dir);
@@ -482,6 +824,13 @@ pub fn build_full_efi(
 
     let agent = http_agent();
     let redirect_agent = http_agent_no_redirects();
+
+    // --- 0. Версия установленного OpenCore (best-effort) и сравнение байт ---
+    let (previous_version, _) = if oc_dir.join("OpenCore.efi").is_file() {
+        detect_installed_version(&efi_base)
+    } else {
+        (None, "none".to_string())
+    };
 
     // --- 1. OpenCorePkg: последний релиз (версия из redirect, без API-лимитов) ---
     progress(BuildProgress {
@@ -517,34 +866,109 @@ pub fn build_full_efi(
         percent: 35,
     });
     let mut oc_archive = open_zip(&oc_zip)?;
+
+    // Совпадает ли установленный OpenCore.efi с новой версией (по байтам)?
+    let was_up_to_date = match std::fs::read(oc_dir.join("OpenCore.efi")) {
+        Ok(cur) => {
+            let idx = find_entry(&mut oc_archive, "x64/efi/oc/opencore.efi")
+                .ok_or("в архиве OpenCorePkg нет X64/EFI/OC/OpenCore.efi")?;
+            Some(cur == entry_bytes(&mut oc_archive, idx)?)
+        }
+        Err(_) => None,
+    };
+
     let oc_install = install_opencore_files(&mut oc_archive, &efi_base);
+
+    // --- Опциональные инструменты (OpenShell) из того же архива ---
+    let mut tools_installed: Vec<String> = Vec::new();
+    if options.tools {
+        match install_tools(&mut oc_archive, &efi_base) {
+            Ok(Some(rel)) => tools_installed.push(rel),
+            Ok(None) => warnings.push(
+                "в архиве OpenCorePkg нет OpenShell.efi — структура релиза изменилась?".into(),
+            ),
+            Err(e) => warnings.push(format!("OpenShell не установлен: {e}")),
+        }
+    }
+
+    // --- AudioDxe.efi — тоже из пакета OpenCorePkg (в OcBinaryData его нет) ---
+    let mut audio_dxe_installed = false;
+    if options.audio_dxe {
+        if let Some(idx) = find_entry(&mut oc_archive, "x64/efi/oc/drivers/audiodxe.efi") {
+            match entry_bytes(&mut oc_archive, idx) {
+                Ok(bytes) => {
+                    if let Err(e) = write_file(
+                        &efi_base.join("OC").join("Drivers").join("AudioDxe.efi"),
+                        &bytes,
+                    ) {
+                        warnings.push(format!("AudioDxe не установлен: {e}"));
+                    } else {
+                        audio_dxe_installed = true;
+                    }
+                }
+                Err(e) => warnings.push(format!("AudioDxe не установлен: {e}")),
+            }
+        } else {
+            warnings.push(
+                "в архиве OpenCorePkg нет AudioDxe.efi — структура релиза изменилась?".into(),
+            );
+        }
+    }
+
     let _ = std::fs::remove_file(&oc_zip);
     let oc_install = oc_install?;
     let mut files_installed = oc_install.files;
+    files_installed.extend(tools_installed.iter().cloned());
+    if audio_dxe_installed {
+        files_installed.push("OC/Drivers/AudioDxe.efi".into());
+    }
 
     if let Some(note) = &oc_install.bootx64_note {
         warnings.push(note.clone());
     }
 
-    // --- 2. OcBinaryData: HfsPlus + драйверы-записи + Resources ---
-    progress(BuildProgress {
-        stage: "data_download".into(),
-        message: "Скачиваю OcBinaryData (HfsPlus, Resources)…".into(),
-        percent: 50,
-    });
-    let data_zip = temp_zip("ocbinary");
-    download_to_file_limited(&agent, OC_BINARY_DATA_URL, &data_zip, MAX_OCBINARY_BYTES)?;
+    // --- 2. OcBinaryData: HfsPlus + Resources (нужен, если HfsPlus ещё нет
+    //        или запрошен AudioDxe с аудиоресурсами) ---
+    let hfs_exists = efi_base
+        .join("OC")
+        .join("Drivers")
+        .join("HfsPlus.efi")
+        .is_file();
+    let need_ocbinary = !hfs_exists || options.audio_dxe;
+    let mut audio_installed = false;
+    let mut resources_installed: Vec<String> = Vec::new();
+    if need_ocbinary {
+        progress(BuildProgress {
+            stage: "data_download".into(),
+            message: "Скачиваю OcBinaryData (HfsPlus, Resources)…".into(),
+            percent: 50,
+        });
+        let data_zip = temp_zip("ocbinary");
+        download_to_file_limited(&agent, OC_BINARY_DATA_URL, &data_zip, MAX_OCBINARY_BYTES)?;
 
-    progress(BuildProgress {
-        stage: "data_extract".into(),
-        message: "Распаковываю HfsPlus и Resources…".into(),
-        percent: 65,
-    });
-    let mut data_archive = open_zip(&data_zip)?;
-    let data_install = install_ocbinarydata(&mut data_archive, &efi_base);
-    let _ = std::fs::remove_file(&data_zip);
-    let (data_files, resources_installed) = data_install?;
-    files_installed.extend(data_files);
+        progress(BuildProgress {
+            stage: "data_extract".into(),
+            message: "Распаковываю HfsPlus и Resources…".into(),
+            percent: 65,
+        });
+        let mut data_archive = open_zip(&data_zip)?;
+        let data_install = install_ocbinarydata(&mut data_archive, &efi_base, options.audio_dxe);
+        let _ = std::fs::remove_file(&data_zip);
+        let (data_files, res) = data_install?;
+        let audio_files_copied = files_installed
+            .iter()
+            .chain(data_files.iter())
+            .any(|f| f.contains("Resources/Audio"));
+        files_installed.extend(data_files);
+        resources_installed = res;
+        audio_installed = audio_dxe_installed && audio_files_copied;
+    } else {
+        progress(BuildProgress {
+            stage: "data_extract".into(),
+            message: "HfsPlus уже установлен — OcBinaryData пропущен".into(),
+            percent: 65,
+        });
+    }
 
     // --- 3. config.plist: свой или Sample-фолбэк ---
     progress(BuildProgress {
@@ -585,6 +1009,9 @@ pub fn build_full_efi(
         if files_installed.iter().any(|f| f.ends_with("ToggleSipEntry.efi")) {
             drivers.push("ToggleSipEntry.efi".into());
         }
+        if audio_installed {
+            drivers.push("AudioDxe.efi".into());
+        }
         match patch_uefi_drivers(&config_path, &drivers, oc_install.canopy) {
             Ok((patched, backup)) => {
                 config_patched = patched;
@@ -594,6 +1021,34 @@ pub fn build_full_efi(
                 "config.plist есть, но драйверы не зарегистрированы — включите их сами в UEFI → Drivers: {e}"
             )),
         }
+
+        if audio_installed {
+            // звук в пикере: AudioSupport + сами аудиофайлы
+            match patch_audio_support(&config_path) {
+                Ok(_) => {}
+                Err(e) => warnings.push(format!(
+                    "AudioSupport не включён — звук в пикере заработает после ручной правки UEFI → Audio: {e}"
+                )),
+            }
+        }
+
+        if !tools_installed.is_empty() {
+            let tools: Vec<String> = tools_installed
+                .iter()
+                .map(|t| t.trim_start_matches("OC/").to_string())
+                .collect();
+            match patch_misc_tools(&config_path, &tools) {
+                Ok(_) => {}
+                Err(e) => warnings.push(format!(
+                    "Tools не зарегистрированы в Misc → Tools — включите их сами: {e}"
+                )),
+            }
+        }
+    } else if !tools_installed.is_empty() {
+        warnings.push(
+            "config.plist не найден — OpenShell скопирован, но не зарегистрирован в Misc → Tools"
+                .into(),
+        );
     }
 
     progress(BuildProgress {
@@ -606,6 +1061,8 @@ pub fn build_full_efi(
         efi_dir: efi_base.to_string_lossy().to_string(),
         oc_dir: oc_dir.to_string_lossy().to_string(),
         opencore_version: Some(opencore_version),
+        previous_version,
+        was_up_to_date,
         files_installed,
         bootx64: oc_install.bootx64,
         bootx64_note: oc_install.bootx64_note,
@@ -619,6 +1076,8 @@ pub fn build_full_efi(
         config_backup,
         canopy_enabled: oc_install.canopy,
         resources_installed,
+        tools_installed,
+        audio_installed,
         backup_path,
         audit_warnings,
         warnings,
@@ -794,7 +1253,7 @@ mod tests {
             std::io::Write::write_all(w, b"docs").unwrap();
         });
         let mut ar = ZipArchive::new(std::io::Cursor::new(&data)).unwrap();
-        let (files, resources) = install_ocbinarydata(&mut ar, &efi).unwrap();
+        let (files, resources) = install_ocbinarydata(&mut ar, &efi, false).unwrap();
 
         assert!(efi.join("OC").join("Drivers").join("HfsPlus.efi").exists());
         assert!(efi.join("OC").join("Resources").join("Font").join("Roboto-Regular.ttf").exists());
@@ -810,6 +1269,35 @@ mod tests {
     }
 
     #[test]
+    fn test_install_ocbinarydata_with_audio() {
+        let efi = tmp("oc-hfs-audio");
+        let data = zip_bytes(|w| {
+            let opts = SimpleFileOptions::default();
+            w.start_file("OcBinaryData-master/Drivers/HfsPlus.efi", opts).unwrap();
+            std::io::Write::write_all(w, b"HFS").unwrap();
+            w.start_file("OcBinaryData-master/Resources/Font/Roboto-Regular.ttf", opts).unwrap();
+            std::io::Write::write_all(w, b"font").unwrap();
+            w.start_file("OcBinaryData-master/Resources/Audio/AXEFIAudio_Boot.mp3", opts).unwrap();
+            std::io::Write::write_all(w, b"boot-mp3").unwrap();
+            w.start_file("OcBinaryData-master/Resources/Audio/AXEFIAudio_Click.mp3", opts).unwrap();
+            std::io::Write::write_all(w, b"click-mp3").unwrap();
+            w.start_file("OcBinaryData-master/Resources/Audio/AXEFIAudio_ru_Password.mp3", opts).unwrap();
+            std::io::Write::write_all(w, b"ru-mp3").unwrap();
+        });
+        let mut ar = ZipArchive::new(std::io::Cursor::new(&data)).unwrap();
+        let (files, resources) = install_ocbinarydata(&mut ar, &efi, true).unwrap();
+
+        assert!(files.contains(&"OC/Drivers/HfsPlus.efi".to_string()));
+        assert!(resources.contains(&"Audio".to_string()));
+        let audio_dir = efi.join("OC").join("Resources").join("Audio");
+        assert!(audio_dir.join("AXEFIAudio_Boot.mp3").exists());
+        assert!(audio_dir.join("AXEFIAudio_Click.mp3").exists());
+        // языковые файлы не копируем — EFI не раздувается
+        assert!(!audio_dir.join("AXEFIAudio_ru_Password.mp3").exists());
+        std::fs::remove_dir_all(&efi).ok();
+    }
+
+    #[test]
     fn test_install_ocbinarydata_requires_hfsplus() {
         let efi = tmp("oc-nohfs");
         let data = zip_bytes(|w| {
@@ -818,7 +1306,7 @@ mod tests {
             std::io::Write::write_all(w, b"x").unwrap();
         });
         let mut ar = ZipArchive::new(std::io::Cursor::new(&data)).unwrap();
-        let err = install_ocbinarydata(&mut ar, &efi).unwrap_err();
+        let err = install_ocbinarydata(&mut ar, &efi, false).unwrap_err();
         assert!(err.contains("HfsPlus"), "внятная ошибка: {err}");
         std::fs::remove_dir_all(&efi).ok();
     }
@@ -948,7 +1436,8 @@ mod tests {
     fn test_network_full_efi_build() {
         let d = tmp("oc-net");
         std::fs::create_dir_all(d.join("EFI")).unwrap(); // resolve_efi_base найдёт EFI
-        let report = build_full_efi(&d, |_| {}).unwrap();
+        let report =
+            build_full_efi(&d, FullEfiOptions { tools: true, audio_dxe: false }, |_| {}).unwrap();
         assert!(report.opencore_version.is_some(), "версия OpenCore определена");
         assert!(d.join("EFI").join("OC").join("OpenCore.efi").exists());
         assert!(d.join("EFI").join("OC").join("Drivers").join("OpenRuntime.efi").exists());
@@ -963,6 +1452,136 @@ mod tests {
         assert!(report.config_patched, "драйверы зарегистрированы");
         let cfg = std::fs::read_to_string(d.join("EFI").join("OC").join("config.plist")).unwrap();
         assert!(cfg.contains("OpenRuntime.efi"));
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn test_install_tools_from_archive() {
+        let efi = tmp("oc-tools");
+        let data = zip_bytes(|w| {
+            let opts = SimpleFileOptions::default();
+            w.start_file("X64/EFI/OC/Tools/OpenShell.efi", opts).unwrap();
+            std::io::Write::write_all(w, b"shell").unwrap();
+            w.start_file("X64/EFI/OC/Tools/CsrUtil.efi", opts).unwrap();
+            std::io::Write::write_all(w, b"csr").unwrap();
+        });
+        let mut ar = ZipArchive::new(std::io::Cursor::new(&data)).unwrap();
+        let rel = install_tools(&mut ar, &efi).unwrap();
+        assert_eq!(rel.as_deref(), Some("OC/Tools/OpenShell.efi"));
+        assert!(efi.join("OC").join("Tools").join("OpenShell.efi").exists());
+        // CsrUtil не запрошен — не установлен
+        assert!(!efi.join("OC").join("Tools").join("CsrUtil.efi").exists());
+        std::fs::remove_dir_all(&efi).ok();
+    }
+
+    #[test]
+    fn test_patch_misc_tools_append_and_enable() {
+        let dir = tmp("oc-tools-cfg");
+        let config = dir.join("config.plist");
+        std::fs::write(&config, drivers_config_xml()).unwrap(); // есть Misc/Boot, нет Tools
+
+        let (changed, backup) = patch_misc_tools(&config, &["Tools/OpenShell.efi".into()]).unwrap();
+        assert!(changed);
+        assert!(backup);
+        let root = Value::from_reader(std::fs::File::open(&config).unwrap())
+            .unwrap()
+            .into_dictionary()
+            .unwrap();
+        let arr = root
+            .get("Misc")
+            .and_then(|m| m.as_dictionary())
+            .and_then(|m| m.get("Tools"))
+            .and_then(|t| t.as_array())
+            .unwrap();
+        assert_eq!(arr.len(), 1);
+        let d = arr[0].as_dictionary().unwrap();
+        assert_eq!(d.get("Path").and_then(|p| p.as_string()), Some("Tools/OpenShell.efi"));
+        assert_eq!(d.get("Name").and_then(|p| p.as_string()), Some("OpenShell.efi"));
+        assert_eq!(d.get("Enabled").and_then(|p| p.as_boolean()), Some(true));
+        assert_eq!(d.get("Auxiliary").and_then(|p| p.as_boolean()), Some(true));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_patch_audio_support() {
+        let dir = tmp("oc-audio-cfg");
+        let config = dir.join("config.plist");
+        std::fs::write(&config, drivers_config_xml()).unwrap();
+
+        let (changed, _) = patch_audio_support(&config).unwrap();
+        assert!(changed);
+        let root = Value::from_reader(std::fs::File::open(&config).unwrap())
+            .unwrap()
+            .into_dictionary()
+            .unwrap();
+        let support = root
+            .get("UEFI")
+            .and_then(|u| u.as_dictionary())
+            .and_then(|u| u.get("Audio"))
+            .and_then(|a| a.as_dictionary())
+            .and_then(|a| a.get("AudioSupport"))
+            .and_then(|a| a.as_boolean());
+        assert_eq!(support, Some(true));
+        // повторно — уже включено, изменений нет
+        let (changed2, backup2) = patch_audio_support(&config).unwrap();
+        assert!(!changed2);
+        assert!(!backup2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_plausible_oc_version() {
+        assert_eq!(plausible_oc_version("1.0.5").as_deref(), Some("1.0.5"));
+        assert_eq!(plausible_oc_version("0.9.7").as_deref(), Some("0.9.7"));
+        assert_eq!(plausible_oc_version(" 0.7.7 ").as_deref(), Some("0.7.7"));
+        assert_eq!(plausible_oc_version("12.0.1"), None, "OC не бывает 12.x");
+        assert_eq!(plausible_oc_version("1.2"), None);
+        assert_eq!(plausible_oc_version("1.2.3.4"), None);
+        assert_eq!(plausible_oc_version("abc"), None);
+    }
+
+    #[test]
+    fn test_first_version_in_text() {
+        // формат лога OpenCore: первая версия в тексте — версия OC
+        let log = "00:000 00:000 OC: Version: 1.0.5 (RELEASE)\n00:002 00:002 OC: ...";
+        assert_eq!(first_version_in_text(log).as_deref(), Some("1.0.5"));
+        let log2 = "OCABC: boot 2025-07-07\nOpenCore 0.9.7";
+        assert_eq!(first_version_in_text(log2).as_deref(), Some("0.9.7"));
+        // мусор, на который не должно срабатывать
+        assert_eq!(first_version_in_text("99.99.99 nope 2025.07.07"), None);
+    }
+
+    #[test]
+    fn test_version_from_logs() {
+        let d = tmp("oc-logs");
+        let efi = d.join("EFI");
+        std::fs::create_dir_all(efi.join("OC")).unwrap();
+        std::fs::write(
+            d.join("opencore-2025-01-01-010101.txt"),
+            "OC: Version: 0.9.9 (RELEASE)\n...",
+        )
+        .unwrap();
+        std::fs::write(
+            d.join("opencore-2025-07-07-070707.txt"),
+            "OC: Version: 1.0.2 (RELEASE)\n...",
+        )
+        .unwrap();
+        let (v, src) = version_from_logs(&efi).expect("версия найдена в логе");
+        assert_eq!(v, "1.0.2", "берём самый свежий лог");
+        assert_eq!(src, "log");
+        std::fs::remove_dir_all(&d).ok();
+    }
+
+    #[test]
+    fn test_detect_installed_version_without_sources() {
+        let d = tmp("oc-nover");
+        let efi = d.join("EFI");
+        std::fs::create_dir_all(efi.join("OC")).unwrap();
+        std::fs::write(efi.join("OC").join("OpenCore.efi"), b"bin").unwrap();
+        let (v, src) = detect_installed_version(&efi);
+        // в песочнице нет ни efivars с opencore-version, ни логов
+        assert_eq!(src, "none");
+        assert_eq!(v, None);
         std::fs::remove_dir_all(&d).ok();
     }
 }

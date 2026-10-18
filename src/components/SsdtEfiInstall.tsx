@@ -14,11 +14,13 @@ import { Button } from "@/components/ui/button";
 
 interface Props {
   ssdts: SsdtEntry[];
+  /** Найденная ESP-база из детектора (undefined — диалог выбора папки) */
+  base?: string | null;
 }
 
 type Phase = "idle" | "running" | "done";
 
-export function SsdtEfiInstall({ ssdts }: Props) {
+export function SsdtEfiInstall({ ssdts, base }: Props) {
   const { t, tb } = useI18n();
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState<KextDlProgress | null>(null);
@@ -47,7 +49,10 @@ export function SsdtEfiInstall({ ssdts }: Props) {
         file: s.file,
         repo_file: s.repo_file,
       }));
-      const r = await invoke<SsdtsToEfiReport>("download_ssdts_to_efi", { ssdts: items });
+      const r = await invoke<SsdtsToEfiReport>("download_ssdts_to_efi", {
+        ssdts: items,
+        base: base ?? undefined,
+      });
       setReport(r);
       setPhase("done");
     } catch (e) {

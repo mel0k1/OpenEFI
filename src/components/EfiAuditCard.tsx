@@ -20,7 +20,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 /** Карточка защиты EFI: аудит папки + ручной бэкап EFI/OC (шаг Экспорт) */
-export function EfiAuditCard() {
+interface Props {
+  /** Найденная ESP-база из детектора (undefined — диалог выбора папки) */
+  base?: string | null;
+}
+
+export function EfiAuditCard({ base }: Props) {
   const { t, tb } = useI18n();
   const [audit, setAudit] = useState<EfiAudit | null>(null);
   const [checking, setChecking] = useState(false);
@@ -33,7 +38,7 @@ export function EfiAuditCard() {
     setError(null);
     setBackup(null);
     try {
-      setAudit(await invoke<EfiAudit>("audit_efi_folder"));
+      setAudit(await invoke<EfiAudit>("audit_efi_folder", { base: base ?? undefined }));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -45,7 +50,7 @@ export function EfiAuditCard() {
     setBackingUp(true);
     setError(null);
     try {
-      setBackup(await invoke<EfiBackupReport>("backup_efi_folder"));
+      setBackup(await invoke<EfiBackupReport>("backup_efi_folder", { base: base ?? undefined }));
     } catch (e) {
       setError(String(e));
     } finally {
